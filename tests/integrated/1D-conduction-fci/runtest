@@ -26,7 +26,7 @@ nproc = 1
 
 var = "Pe"
 
-petsc_options = ["True", "False"]
+petsc_options = ["Original", "PetscOperator"]
 
 results = {}
 
@@ -34,7 +34,7 @@ for petsc in petsc_options:
     results[petsc] = {"l2": [], "inf": []}
 
     for ny in nylist:
-        args = f"mesh:file={gridname(ny)} nout={nout} timestep={timestep} use_petsc_operator={petsc}"
+        args = f"mesh:file={gridname(ny)} nout={nout} timestep={timestep} conduction_method={petsc}"
         print("Running with " + args)
 
         # Delete old data
