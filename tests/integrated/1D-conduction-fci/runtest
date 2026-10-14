@@ -26,7 +26,7 @@ nproc = 1
 
 var = "Pe"
 
-petsc_options = ["Original", "PetscOperator"]
+petsc_options = ["original", "petscoperator"]
 
 results = {}
 
