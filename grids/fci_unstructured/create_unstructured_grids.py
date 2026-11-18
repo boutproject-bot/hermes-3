@@ -250,6 +250,20 @@ def main():
             lambda fn: make_test_grid("bout_mms", 16, filename=fn),
         )
 
+        folder = here / "US_cyl_walls"
+        folder.mkdir(exist_ok=True)
+        # Cylindrical annulus with a sheared field (field lines move in Z and
+        # the maps interpolate) and Dirichlet walls in R: near-wall nodes
+        # exchange parallel heat with the wall nodes through their
+        # interpolation stencils (wall-exchange accounting test)
+        write(
+            folder / "US_cyl_walls_16.fci.grid.nc",
+            args.force,
+            lambda fn: make_test_grid(
+                "bout_mms_cyl_sheared", 16, filename=fn, dirichlet_walls=True
+            ),
+        )
+
         folder = here / "US_annulus"
         if importlib.util.find_spec("gmsh") is None:
             print("gmsh not found: skipping", folder.name)

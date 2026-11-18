@@ -315,9 +315,12 @@ void BraginskiiConduction::transform_impl(GuardedOptions& state) {
     set(species["kappa_par"], kappa_par);
 
     // Petsc can be used to calculate the divergence of the heat flux
-    add(species["energy_source"],
-        Div_par_K_Grad_par_mod(kappa_par, T, flow_ylow_conduction, false,
-                               conduction_method));
+    Field3D conduction_source = Div_par_K_Grad_par_mod(kappa_par, T, flow_ylow_conduction,
+                                                       false, conduction_method);
+    if (all_diagnose[name]) {
+      all_conduction_source[name] = conduction_source;
+    }
+    add(species["energy_source"], conduction_source);
     add(species["energy_flow_ylow"], flow_ylow_conduction);
 
     if (state.isSection("fields") and IS_SET(state["fields:Apar_flutter"])) {
@@ -370,6 +373,15 @@ void BraginskiiConduction::outputVars(Options& state) {
                     {"long_name", "collision frequency for conduction"},
                     {"species", name},
                     {"source", "evolve_pressure"}});
+
+    set_with_attrs(state[fmt::format("E{}_cond", name)], all_conduction_source[name],
+                   {{"time_dimension", "t"},
+                    {"units", "W / m^3"},
+                    {"conversion", Pnorm * Omega_ci},
+                    {"standard_name", "energy source"},
+                    {"long_name", name + " parallel conduction energy source"},
+                    {"species", name},
+                    {"source", "braginskii_conduction"}});
 
     set_with_attrs(state[fmt::format("ef{}_cond_ylow", name)], flow_ylow_conduction,
                    {{"time_dimension", "t"},

@@ -56,6 +56,10 @@ private:
   std::map<std::string, BoutReal> all_kappa_limit_alpha; ///< Flux limit if >0
   std::map<std::string, Field3D>
       all_flow_ylow_conduction; ///< Conduction energy flow diagnostics
+  /// Conduction energy source (diagnostics). Includes the values at the x
+  /// boundary cells, which on unstructured grids are the Dirichlet wall
+  /// nodes: their (negative) sum is the energy exchanged with the walls
+  std::map<std::string, Field3D> all_conduction_source;
   /// Save more diagnostics?
   std::map<std::string, bool> all_diagnose;
 
