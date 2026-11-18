@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+
+# Heat balance with sheaths and support-operator conduction on an
+# unstructured FCI grid (follow-up 3, report item e.1): the rate of change of
+# the thermal energy W = sum 3/2 (Pe + Pi) dV, with the physical volume
+# dV = dy * dagp_us_volume, must equal the sheath energy sinks
+# sum (E_e,sheath + E_i,sheath) dV. Conduction must not remove energy
+# through the parallel boundaries in addition to the sheath (it did when the
+# support-operator method ignored bndry_flux).
+
+import sys
+from pathlib import Path
+
+import netCDF4
+import numpy as np
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+
+shell("rm -f data/BOUT.dmp.*.nc")
+_, out = launch_safe("../../../hermes-3", nproc=1, pipe=True)
+Path("run.log").write_text(out)
+
+gridfile = "../../../grids/fci_unstructured/US_slab_with_BC/US_slab_with_BC_256.fci.grid.nc"
+with netCDF4.Dataset(gridfile) as grid:
+    mxg = int(grid["MXG"][...])
+    dV = (grid["dy"][:] * grid["dagp_us_volume"][:])[mxg:-mxg, :, 0]
+
+
+def get(name):
+    return collect(name, path="data", info=False, xguards=False, yguards=False)[
+        ..., 0
+    ]
+
+
+t = collect("t_array", path="data", info=False)
+P = get("Pe") + get("Ph+")
+E = get("Ee_sheath") + get("Eh+_sheath")
+W = 1.5 * np.sum(P * dV, axis=(1, 2))
+sink = np.sum(E * dV, axis=(1, 2))
+
+# Change of W between outputs against the trapezoidal integral of the sinks
+dW = np.diff(W)
+integral = 0.5 * (sink[1:] + sink[:-1]) * np.diff(t)
+error = np.abs(dW - integral) / np.abs(integral)
+print(f"Thermal energy: {W[0]:.6e} -> {W[-1]:.6e} ({(W[-1] / W[0] - 1) * 100:.1f}%)")
+for i, (a, b, e) in enumerate(zip(dW, integral, error)):
+    print(f"interval {i:2d}: dW {a:.6e}, sheath sinks {b:.6e}, relative difference {e:.2e}")
+
+# Trapezoidal-rule error only (the sinks vary smoothly between outputs)
+tol = 1e-2
+success = W[-1] < 0.95 * W[0] and np.max(error) < tol
+print(f"Largest relative difference {np.max(error):.2e} (tolerance {tol})")
+if success:
+    print(" => Test passed")
+    sys.exit(0)
+print(" => Test failed")
+sys.exit(1)

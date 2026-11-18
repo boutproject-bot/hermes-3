@@ -494,6 +494,10 @@ if(HERMES_TESTS)
   hermes_add_integrated_test(
     solver-statistics-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
     BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
+  # Heat balance of sheaths and support-operator conduction
+  hermes_add_integrated_test(
+    sheath-heat-balance-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
+    BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
   # Unsupported components and options stop with a clear error
   hermes_add_integrated_test(
     unsupported-features-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
