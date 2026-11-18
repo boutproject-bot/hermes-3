@@ -490,6 +490,14 @@ if(HERMES_TESTS)
   hermes_add_integrated_test(
     conduction-conservation-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
     BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
+  # Solver work of an unstructured run against its structured counterpart
+  hermes_add_integrated_test(
+    solver-statistics-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
+    BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
+  # Maximum principle for diffusion between curved Dirichlet walls
+  hermes_add_integrated_test(
+    maximum-principle-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
+    BOUT_HAS_PETSC zoidberg_unstructured_FOUND gmsh_FOUND)
   # Variant on a gmsh annulus with two curved Dirichlet walls
   hermes_add_integrated_test(
     2D-density-anomalous-fci-unstructured-annulus REQUIRES BOUT_USE_METRIC_3D

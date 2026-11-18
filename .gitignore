@@ -45,3 +45,4 @@ dist/
 # Generated at run time by tests/integrated/unstructured_utils.py
 tests/integrated/*-fci-unstructured*/data/
 !tests/integrated/conduction-conservation-fci-unstructured/data/
+!tests/integrated/maximum-principle-fci-unstructured/data/
