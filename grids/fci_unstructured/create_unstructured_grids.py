@@ -240,6 +240,16 @@ def main():
                 ),
             )
 
+        folder = here / "US_closed"
+        folder.mkdir(exist_ok=True)
+        # Closed field lines (sheared Slab, no wall hits) with genuine
+        # interpolation: the BOUT-dev MMS strip, used for conservation tests
+        write(
+            folder / "US_closed_16.fci.grid.nc",
+            args.force,
+            lambda fn: make_test_grid("bout_mms", 16, filename=fn),
+        )
+
         folder = here / "US_annulus"
         if importlib.util.find_spec("gmsh") is None:
             print("gmsh not found: skipping", folder.name)
