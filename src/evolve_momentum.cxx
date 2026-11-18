@@ -80,6 +80,10 @@ EvolveMomentum::EvolveMomentum(std::string name, Options& alloptions, Solver* so
           .doc("Fix Y boundary momentum flux to boundary midpoint value?")
           .withDefault<bool>(false);
 
+  requireStructuredMesh("low_n_diffuse_perp", low_n_diffuse_perp);
+  requireStructuredMesh("low_p_diffuse_perp", low_p_diffuse_perp);
+  requireStructuredMesh("hyper_z", hyper_z > 0.);
+
   // Set to zero so set for output
   momentum_source = 0.0;
   NV_err = 0.0;

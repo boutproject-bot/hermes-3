@@ -66,6 +66,7 @@ RelaxPotential::RelaxPotential(std::string name, Options& alloptions, Solver* so
               readIfSet("species:{charged}:AA"),
               readIfSet("species:{charged}:pressure", Regions::Interior),
           }) {
+  requireStructuredMesh("Component relax_potential");
 
   solver->add(Vort, "Vort"); // Vorticity evolving
   solver->add(phi1, "phi1"); // Evolving scaled potential ϕ_1 = λ_2 ϕ

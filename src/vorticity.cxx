@@ -92,6 +92,7 @@ Vector3D Grad_perp_XZ(const Field3D& f) {
 
 Vorticity::Vorticity(std::string name, Options& alloptions, Solver* solver)
     : NamedComponent(name, {readWrite("fields:vorticity"), readWrite("fields:phi")}) {
+  requireStructuredMesh("Component vorticity");
 
   solver->add(Vort, "Vort");
 
