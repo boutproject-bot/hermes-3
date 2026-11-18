@@ -21,7 +21,10 @@ The script traces the two flux surfaces, meshes each cross-section with gmsh
 along x), traces the field lines from every node to the neighbouring planes and
 computes the interpolation and perpendicular-diffusion matrices. With 3 mm it
 gives 6845 nodes per plane (309 and 424 of them on the inner and outer flux
-surface), takes a few minutes and writes `dommaschk_unstructured_8_0.003.fci.nc`.
+surface), takes about 2.5 minutes (1.5 minutes with `--processes 4`), needs
+about 1.4 GB of memory (2 GB at 2.5 mm) and writes
+`dommaschk_unstructured_8_0.003.fci.nc`. It also writes the radial label
+`flux_label` used for the initial profile (see below).
 
 The unknowns sit at the centroids of their dual cells, which gives second-order
 perpendicular diffusion on the unrelaxed gmsh mesh. The wall nodes are stored in
@@ -35,8 +38,11 @@ least `MXG` nodes; BOUT++ chooses a valid split automatically.
 * The wall values are set with `dirichlet_node(...)`, which evaluates the value
   at each wall node, instead of `dirichlet(...)`.
 * BOUT++'s index coordinate `x` is not geometric on unstructured grids, so the
-  initial profile uses the grid variable `xs` (0 on the inner, 1 on the outer
-  flux surface), read through `[input:grid_variables]`.
+  initial profile uses the grid variable `flux_label` (0 on the inner, 1 on the
+  outer flux surface), read through `[input:grid_variables]`. It is the same
+  function of position in both examples (`../dommaschk_label.py`, written by
+  both `create_grid.py` scripts), so the two runs start from the same physical
+  profile. For an existing grid, `python ../dommaschk_label.py GRIDFILE` adds it.
 
 # Running
 
@@ -47,6 +53,5 @@ On unstructured grids the parallel heat conduction uses the conservative
 support-operator method (`conduction_method = petscoperator`) by default. On 8
 cores, t = 10^4 (`nout=100 timestep=100` on the command line) took about 10 min, against
 about 19 min for the structured example (see the unstructured-FCI follow-up
-reports for a detailed comparison). The grid generation needs about 4 GB of
-memory at the default 3 mm mesh size (6 GB at 2.5 mm), so do not generate grids
-while large simulations are running on a small machine.
+reports for a detailed comparison). The grid generation needs about 1.4 GB of
+memory at the default 3 mm mesh size (2 GB at 2.5 mm).

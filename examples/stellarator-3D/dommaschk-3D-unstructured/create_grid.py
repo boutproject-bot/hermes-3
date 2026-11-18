@@ -17,6 +17,7 @@ gmsh``). Existing files are kept unless ``-f`` is given.
 """
 
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -29,6 +30,9 @@ from zoidberg.unstructured import (
     gmsh_planes,
     write_unstructured,
 )
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from dommaschk_label import FluxLabel
 
 # Field and domain: as in ../dommaschk-3D/create_grid.py
 C = np.zeros((6, 5, 4))
@@ -72,6 +76,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--mesh-size", type=float, default=3e-3, help="[m]")
     parser.add_argument("-f", "--force", action="store_true", help="overwrite")
+    parser.add_argument(
+        "--processes",
+        type=int,
+        default=1,
+        help="worker processes for the per-plane operators (identical result)",
+    )
     args = parser.parse_args()
 
     filename = Path(__file__).resolve().parent / (
@@ -96,7 +106,7 @@ def main():
     grid = UnstructuredGrid(planes, ycoords, YPERIOD, dirichlet_walls=True)
     # Near-isotropic gmsh meshes: 4 extra nodes in the face-gradient fits are
     # as accurate as the default 16 and need about a quarter fewer nonzeros
-    data, stats = build_grid_data(grid, field, dagp_extra=4)
+    data, stats = build_grid_data(grid, field, dagp_extra=4, processes=args.processes)
     print(f"  {stats}")
     # Field lines from evolving nodes that leave the domain get parallel
     # boundary conditions; with flux-surface walls there should be none
@@ -107,6 +117,12 @@ def main():
         n_hits = int(np.sum((xt < 0) | (xt >= grid.nx)))
         print(f"  {name} wall hits from evolving nodes: {n_hits}")
     data["xs"] = grid.to3d([radial_coordinate(p) for p in planes])
+    # Common radial label of the structured and unstructured examples (the
+    # initial profile): distances to the traced flux surfaces
+    label = FluxLabel()
+    data["flux_label"] = grid.to3d(
+        [label(p.dof[:, 0], p.dof[:, 1], j) for j, p in enumerate(planes)]
+    )
 
     write_unstructured(str(filename), grid, data)
     print("Created", filename)

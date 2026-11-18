@@ -9,6 +9,11 @@ file = "dommaschk_68_8_512.fci.grid.nc"
 [mesh:paralleltransform]
 type = fci
 
+# Common radial label of the structured and unstructured examples, written
+# by create_grid.py (0 on the inner, 1 on the outer flux surface)
+[input:grid_variables]
+flux_label = field3d
+
 [solver]
 mxstep = 10000
 type = cvode
@@ -36,7 +41,7 @@ thermal_conduction = true
 density = hermes:Nnorm
 
 [Ph+]
-function = 1.0 - 0.9 * x
+function = 1.0 - 0.9 * gridvar:flux_label
 bndry_xin = dirichlet(1.0)  # Core boundary high density
 bndry_xout = dirichlet(0.1)   # All other boundaries low density
 
@@ -51,6 +56,6 @@ thermal_conduction = true
 density = hermes:Nnorm
 
 [Pe]
-function = 1.0 - 0.9 * x
+function = 1.0 - 0.9 * gridvar:flux_label
 bndry_xin = dirichlet(1.0)  # Core boundary high density
 bndry_xout = dirichlet(0.1)   # All other boundaries low density

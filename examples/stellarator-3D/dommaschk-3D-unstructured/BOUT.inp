@@ -1,8 +1,9 @@
 # Unstructured-mesh version of ../dommaschk-3D/BOUT.inp (same physics).
 # Differences: the grid (create_grid.py), the precomputed XZ interpolation
 # required on unstructured grids, the dirichlet_node boundary condition for
-# the wall nodes, and the initial profile in terms of the grid variable xs
-# (0 on the inner, 1 on the outer flux surface) instead of BOUT++'s x.
+# the wall nodes. Both examples start from the same initial profile, in terms
+# of the grid variable flux_label (0 on the inner, 1 on the outer flux
+# surface; ../dommaschk_label.py), written by both create_grid.py scripts.
 
 nout = 100
 timestep = 10000
@@ -18,7 +19,7 @@ type = fci
 type = precomputed
 
 [input:grid_variables]
-xs = field3d
+flux_label = field3d
 
 [solver]
 mxstep = 10000
@@ -47,7 +48,7 @@ thermal_conduction = true
 density = hermes:Nnorm
 
 [Ph+]
-function = 1.0 - 0.9 * gridvar:xs
+function = 1.0 - 0.9 * gridvar:flux_label
 bndry_xin = dirichlet_node(1.0)  # Inner flux surface (wall nodes)
 bndry_xout = dirichlet_node(0.1)   # Outer flux surface (wall nodes)
 
@@ -62,6 +63,6 @@ thermal_conduction = true
 density = hermes:Nnorm
 
 [Pe]
-function = 1.0 - 0.9 * gridvar:xs
+function = 1.0 - 0.9 * gridvar:flux_label
 bndry_xin = dirichlet_node(1.0)  # Inner flux surface (wall nodes)
 bndry_xout = dirichlet_node(0.1)   # Outer flux surface (wall nodes)
