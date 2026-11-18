@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+
+# Python script to run and analyse MMS test
+#
+# Unstructured-mesh variant of ../2D-density-anomalous-fci on an annulus
+# with two curved walls, meshed with gmsh (mesh sizes 1/16 and 1/32). The
+# wall nodes are Dirichlet nodes held at the solution (dirichlet_node).
+# Same input (generated from ../2D-density-anomalous-fci/data/BOUT.inp by
+# unstructured_utils.py; the MMS solution is defined on any domain), same
+# threshold, grids from grids/fci_unstructured/create_unstructured_grids.py
+
+import sys
+from pathlib import Path
+
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+from numpy import abs, array, log, max, mean, sqrt
+
+this_dir = Path(__file__).resolve().parent
+sys.path.append(str(this_dir.parent))
+from unstructured_utils import make_unstructured_input
+
+# BOUT++ index coordinates x, z of the structured grid (R in [1.5, 2.5],
+# Z periodic with period 1) in terms of the unstructured grid geometry
+make_unstructured_input(
+    "2D-density-anomalous-fci",
+    xu="gridvar:R - 1.5",
+    zu="6.28318530717959*(gridvar:Z + 0.5)",
+    here=this_dir,
+    dirichlet_nodes=True,
+)
+
+gridpath = "../../../grids/fci_unstructured/US_annulus/"
+
+
+def gridname(n):
+    return gridpath + f"US_annulus_{n}.fci.grid.nc"
+
+
+# Inverse mesh sizes; the meshes are not nested, so the spacing is the
+# gmsh mesh size 1/n
+nylist = [16, 32]
+
+nout = 20
+timestep = 1e7 / nout
+
+nproc = 1
+
+varnames = ["Nh+"]
+
+results = {}
+for var in varnames:
+    results[var] = {"l2": [], "inf": []}
+
+for ny in nylist:
+    args = f"mesh:file={gridname(ny)} nout={nout} timestep={timestep}"
+
+    print("Running with " + args)
+
+    # Delete old data
+    shell("rm data/BOUT.dmp.*.nc")
+
+    # Command to run
+    cmd = "../../../hermes-3 " + args
+    # Launch using MPI
+    _, out = launch_safe(cmd, nproc=nproc, pipe=True)
+    Path(f"run.log.{ny}").write_text(out)
+
+    # Collect data
+    for var in varnames:
+        E = collect("E_" + var, tind=[nout, nout], path="data", info=False)
+        mxg = int(collect("MXG", path="data", info=False))
+        E = E[:, mxg:-mxg, :, :]  # guard cells are the Dirichlet wall nodes
+
+        l2 = sqrt(mean(E**2))
+        linf = max(abs(E))
+        results[var]["l2"].append(l2)
+        results[var]["inf"].append(linf)
+
+        print(f"Error norm {var}: l-2 {l2:f} l-inf {linf:f}")
+
+# Grid spacing: the gmsh mesh size
+dy = 1.0 / array(nylist)
+
+success = True
+
+for var in varnames:
+    l2 = results[var]["l2"]
+    order = log(l2[-1] / l2[-2]) / log(dy[-1] / dy[-2])
+    print(f"Convergence order {var} = {order:f}")
+
+    if order < 1.8:
+        success = False
+
+
+if success:
+    print(" => Test passed")
+    sys.exit(0)
+else:
+    print(" => Test failed")
+    sys.exit(1)

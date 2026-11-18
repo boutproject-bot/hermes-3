@@ -314,6 +314,18 @@ if(HERMES_TESTS)
               "import importlib.util as u; exit(u.find_spec('zoidberg.unstructured') is None)"
       RESULT_VARIABLE zoidberg_unstructured_missing
       OUTPUT_QUIET ERROR_QUIET)
+    # Grids with curved walls are meshed with gmsh
+    execute_process(
+      COMMAND ${PYTHON_EXECUTABLE} -c
+              "import importlib.util as u; exit(u.find_spec('gmsh') is None)"
+      RESULT_VARIABLE gmsh_missing
+      OUTPUT_QUIET ERROR_QUIET)
+    if(gmsh_missing EQUAL 0)
+      set(gmsh_FOUND ON)
+    else()
+      set(gmsh_FOUND OFF)
+      message(STATUS "gmsh not found: skipping unstructured tests with curved walls")
+    endif()
     if(zoidberg_unstructured_missing EQUAL 0)
       set(zoidberg_unstructured_FOUND ON)
       add_custom_command(
@@ -474,6 +486,10 @@ if(HERMES_TESTS)
   hermes_add_integrated_test(
     2D-density-anomalous-fci-unstructured-walls REQUIRES BOUT_USE_METRIC_3D
     BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
+  # Variant on a gmsh annulus with two curved Dirichlet walls
+  hermes_add_integrated_test(
+    2D-density-anomalous-fci-unstructured-annulus REQUIRES BOUT_USE_METRIC_3D
+    BOUT_HAS_PETSC zoidberg_unstructured_FOUND gmsh_FOUND)
 
   option(HERMES_UNIT_TESTS "Build the unit tests" ON)
   option(HERMES_DIVOPS_MMS_TESTS "Build the differential operator MMS tests" ON)

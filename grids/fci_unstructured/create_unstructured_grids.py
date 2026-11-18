@@ -15,6 +15,7 @@ attribute differs).
 """
 
 import argparse
+import importlib.util
 import os
 import uuid
 from pathlib import Path
@@ -23,6 +24,7 @@ import numpy as np
 from zoidberg.field import Slab
 from zoidberg.unstructured import (
     UnstructuredPoloidalGrid,
+    gmsh_planes,
     make_test_grid,
     make_unstructured_grid,
 )
@@ -146,6 +148,22 @@ def slab_xz_walls_poloidal(n):
     )
 
 
+def annulus_poloidal(mesh_size):
+    """Annulus with two curved walls, meshed with gmsh: a perturbed ellipse
+    (R in [1.55, 2.49]) around an off-centre elliptic hole. The MMS solution
+    of 2D-density-anomalous-fci is defined everywhere, so the domain shape
+    is free; the wall nodes become Dirichlet nodes."""
+    th = np.linspace(0.0, 2.0 * np.pi, 200, endpoint=False)
+    outer = np.column_stack(
+        (RSHIFT + 0.45 * np.cos(th) + 0.04 * np.cos(3 * th), 0.38 * np.sin(th))
+    )
+    inner = np.column_stack(
+        (RSHIFT + 0.05 + 0.15 * np.cos(th), 0.02 + 0.12 * np.sin(th))
+    )
+    (plane,) = gmsh_planes([outer], [inner], mesh_size=mesh_size)
+    return plane
+
+
 def write(filename, force, build):
     if filename.exists() and not force:
         print(filename, "exists")
@@ -221,6 +239,25 @@ def main():
                     fn, slab_bc_poloidal(), field(), ny=ny, Ly=100.0, walls_y=True
                 ),
             )
+
+        folder = here / "US_annulus"
+        if importlib.util.find_spec("gmsh") is None:
+            print("gmsh not found: skipping", folder.name)
+        else:
+            folder.mkdir(exist_ok=True)
+            for n in (16, 32):
+                write(
+                    folder / f"US_annulus_{n}.fci.grid.nc",
+                    args.force,
+                    lambda fn, n=n: make_unstructured_grid(
+                        fn,
+                        annulus_poloidal(1.0 / n),
+                        field(),
+                        ny=1,
+                        Ly=2.0 * np.pi,
+                        dirichlet_walls=True,
+                    ),
+                )
 
     if args.bout_mms or args.only_bout_mms:
         folder = here / "bout_mms"

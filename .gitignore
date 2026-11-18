@@ -43,4 +43,4 @@ docker/docker-compose.override.yaml
 dist/
 
 # Generated at run time by tests/integrated/unstructured_utils.py
-tests/integrated/*-fci-unstructured/data/
+tests/integrated/*-fci-unstructured*/data/
