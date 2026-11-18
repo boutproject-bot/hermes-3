@@ -94,7 +94,9 @@ def main():
 
     print("Computing maps, operators and metric")
     grid = UnstructuredGrid(planes, ycoords, YPERIOD, dirichlet_walls=True)
-    data, stats = build_grid_data(grid, field)
+    # Near-isotropic gmsh meshes: 4 extra nodes in the face-gradient fits are
+    # as accurate as the default 16 and need about a quarter fewer nonzeros
+    data, stats = build_grid_data(grid, field, dagp_extra=4)
     print(f"  {stats}")
     # Field lines from evolving nodes that leave the domain get parallel
     # boundary conditions; with flux-surface walls there should be none
