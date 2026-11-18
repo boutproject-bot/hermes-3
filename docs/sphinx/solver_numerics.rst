@@ -395,6 +395,11 @@ The
       interpretation of two adjacent half-cells and can give noticeably
       different results when coefficients or cell sizes vary strongly.
 
+   ``PetscOperator``
+      Support-operator method using the PETSc matrices from the grid file
+      (FCI only). It is conservative by construction and is the default on
+      unstructured FCI grids; ``Original`` is the default otherwise.
+
 The selected values are reported at startup in the Hermes-3 log and are
 also recorded in the options tree as ``slope_limiter`` and
 ``conduction_method``.

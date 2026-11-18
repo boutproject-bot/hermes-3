@@ -11,6 +11,7 @@
 #include <bout/field_factory.hxx>
 #include <bout/fv_ops.hxx>
 #include <bout/globals.hxx>
+#include <bout/mesh.hxx>
 #include <bout/options.hxx>
 #include <bout/output.hxx>
 #include <bout/solver.hxx>
@@ -114,6 +115,12 @@ BraginskiiConduction::BraginskiiConduction(const std::string& name, Options& all
   }
   substitutePermissions("sp", species);
 
+  // On unstructured FCI grids the support-operator method (matrices from the
+  // grid file) is the default: it is conservative, whereas the original
+  // flux form at interpolated points is not on FCI grids
+  if (bout::globals::mesh->isUnstructured()) {
+    conduction_method = bout::ConductionMethod::PetscOperator;
+  }
   conduction_method = alloptions["conduction_method"].withDefault(conduction_method);
 }
 
