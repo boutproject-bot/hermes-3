@@ -494,6 +494,10 @@ if(HERMES_TESTS)
   hermes_add_integrated_test(
     solver-statistics-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
     BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
+  # Unsupported components and options stop with a clear error
+  hermes_add_integrated_test(
+    unsupported-features-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
+    BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
   # Maximum principle for diffusion between curved Dirichlet walls
   hermes_add_integrated_test(
     maximum-principle-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
