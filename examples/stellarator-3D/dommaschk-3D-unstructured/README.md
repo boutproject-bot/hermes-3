@@ -43,6 +43,10 @@ least `MXG` nodes; BOUT++ chooses a valid split automatically.
 ```bash
 mpirun -np 8 hermes-3 -d .
 ```
-On 8 cores, t = 10^4 (one output of the default `timestep`) took about 15 min,
-about the same as the structured example (see the unstructured-FCI follow-up
-report for a detailed comparison).
+On unstructured grids the parallel heat conduction uses the conservative
+support-operator method (`conduction_method = petscoperator`) by default. On 8
+cores, t = 10^4 (`nout=100 timestep=100` on the command line) took about 10 min, against
+about 19 min for the structured example (see the unstructured-FCI follow-up
+reports for a detailed comparison). The grid generation needs about 4 GB of
+memory at the default 3 mm mesh size (6 GB at 2.5 mm), so do not generate grids
+while large simulations are running on a small machine.
