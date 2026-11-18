@@ -46,3 +46,6 @@ dist/
 tests/integrated/*-fci-unstructured*/data/
 !tests/integrated/conduction-conservation-fci-unstructured/data/
 !tests/integrated/maximum-principle-fci-unstructured/data/
+!tests/integrated/unsupported-features-fci-unstructured/data/
+!tests/integrated/sheath-heat-balance-fci-unstructured/data/
+!tests/integrated/wall-exchange-fci-unstructured/data/

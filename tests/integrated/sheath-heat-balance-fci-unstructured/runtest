@@ -20,16 +20,16 @@ shell("rm -f data/BOUT.dmp.*.nc")
 _, out = launch_safe("../../../hermes-3", nproc=1, pipe=True)
 Path("run.log").write_text(out)
 
-gridfile = "../../../grids/fci_unstructured/US_slab_with_BC/US_slab_with_BC_256.fci.grid.nc"
+gridfile = (
+    "../../../grids/fci_unstructured/US_slab_with_BC/US_slab_with_BC_256.fci.grid.nc"
+)
 with netCDF4.Dataset(gridfile) as grid:
     mxg = int(grid["MXG"][...])
     dV = (grid["dy"][:] * grid["dagp_us_volume"][:])[mxg:-mxg, :, 0]
 
 
 def get(name):
-    return collect(name, path="data", info=False, xguards=False, yguards=False)[
-        ..., 0
-    ]
+    return collect(name, path="data", info=False, xguards=False, yguards=False)[..., 0]
 
 
 t = collect("t_array", path="data", info=False)
@@ -44,7 +44,9 @@ integral = 0.5 * (sink[1:] + sink[:-1]) * np.diff(t)
 error = np.abs(dW - integral) / np.abs(integral)
 print(f"Thermal energy: {W[0]:.6e} -> {W[-1]:.6e} ({(W[-1] / W[0] - 1) * 100:.1f}%)")
 for i, (a, b, e) in enumerate(zip(dW, integral, error)):
-    print(f"interval {i:2d}: dW {a:.6e}, sheath sinks {b:.6e}, relative difference {e:.2e}")
+    print(
+        f"interval {i:2d}: dW {a:.6e}, sheath sinks {b:.6e}, relative difference {e:.2e}"
+    )
 
 # Trapezoidal-rule error only (the sinks vary smoothly between outputs)
 tol = 1e-2

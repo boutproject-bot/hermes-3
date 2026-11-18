@@ -20,7 +20,12 @@ INDEX_WARNING = "uses the index coordinate x or z on an unstructured mesh"
 CASES = [
     ("base input", "", False, None),
     ("index coordinate x", "'Nh+:function=1+0.1*x'", False, INDEX_WARNING),
-    ("neutral_mixed", "hermes:components=h+,d d:type=neutral_mixed d:AA=2", True, GUARD),
+    (
+        "neutral_mixed",
+        "hermes:components=h+,d d:type=neutral_mixed d:AA=2",
+        True,
+        GUARD,
+    ),
     ("classical_diffusion", "hermes:components=h+,classical_diffusion", True, GUARD),
     ("vorticity", "hermes:components=h+,vorticity", True, GUARD),
     ("relax_potential", "hermes:components=h+,relax_potential", True, GUARD),
