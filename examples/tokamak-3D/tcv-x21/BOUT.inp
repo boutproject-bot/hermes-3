@@ -19,9 +19,9 @@ type = shifted
 
 [solver]
 
-cvode_precon_method = user
+type = pvode  # PVODE has no physics (user) preconditioner
 mxstep = 100000
-cvode_max_order = 3
+max_order = 3
 
 [hermes]
 components = (e, i, sound_speed, vorticity,
