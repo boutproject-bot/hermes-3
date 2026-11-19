@@ -296,18 +296,22 @@ void BraginskiiConduction::transform_impl(GuardedOptions& state) {
       kappa_par.applyParallelBoundary("parallel_neumann_o1");
 
     } else {
+      // Copy into all y guard rows (only the first is used by the fluxes; the
+      // others would otherwise hold values computed from unset guard cells)
       for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
         for (int jz = 0; jz < mesh->LocalNz; jz++) {
           auto i = indexAt(kappa_par, r.ind, mesh->ystart, jz);
-          auto im = i.ym();
-          kappa_par[im] = kappa_par[i];
+          for (int k = 1; k <= mesh->ystart; k++) {
+            kappa_par[i.ym(k)] = kappa_par[i];
+          }
         }
       }
       for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
         for (int jz = 0; jz < mesh->LocalNz; jz++) {
           auto i = indexAt(kappa_par, r.ind, mesh->yend, jz);
-          auto ip = i.yp();
-          kappa_par[ip] = kappa_par[i];
+          for (int k = 1; k < mesh->LocalNy - mesh->yend; k++) {
+            kappa_par[i.yp(k)] = kappa_par[i];
+          }
         }
       }
     }
