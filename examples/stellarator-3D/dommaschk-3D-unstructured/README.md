@@ -55,7 +55,7 @@ input sets it explicitly. It conserves energy exactly, but on irregular meshes
 its solution error converges only at order 0.6-1.4, against order 2.8-3.8 for
 `conduction_method = original`, which does not conserve energy exactly.
 Choose `original` when accuracy matters more than exact conservation. On 8
-cores, t = 10^4 (`nout=100 timestep=100` on the command line) took about 10 min, against
+cores, t = 10^4 (the default `nout = 100`, `timestep = 100`) took about 10 min, against
 about 19 min for the structured example (see the unstructured-FCI follow-up
 reports for a detailed comparison). The grid generation needs about 1.4 GB of
 memory at the default 3 mm mesh size (2 GB at 2.5 mm).

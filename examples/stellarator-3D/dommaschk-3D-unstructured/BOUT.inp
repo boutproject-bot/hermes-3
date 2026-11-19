@@ -6,7 +6,7 @@
 # surface; ../dommaschk_label.py), written by both create_grid.py scripts.
 
 nout = 100
-timestep = 10000
+timestep = 100
 
 # Parallel heat conduction: petscoperator (support operators) is the default
 # on unstructured grids and is set here explicitly. It conserves energy
