@@ -50,8 +50,8 @@ CASES = [
     ("hyper_z", "h+:hyper_z=0.1", True, GUARD),
     ("neumann_boundary_average_z", "Nh+:neumann_boundary_average_z=true", True, GUARD),
     (
-        "Jacobian colouring (CVODE PETSc preconditioner)",
-        "solver:cvode_precon_method=petsc",
+        "Jacobian colouring (SNES backward Euler)",
+        "solver:type=beuler solver:use_coloring=true",
         True,
         COLOURING,
     ),
