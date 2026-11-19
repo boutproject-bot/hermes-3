@@ -46,6 +46,8 @@ var = "Pe"
 petsc_options = ["original", "petscoperator"]
 
 results = {}
+# Overall result: every conduction method must reach the expected order
+success = True
 
 for petsc in petsc_options:
     results[petsc] = {"l2": [], "inf": []}
@@ -76,8 +78,6 @@ for petsc in petsc_options:
 
     # Calculate grid spacing
     dy = 1.0 / array(nylist)
-
-    success = True
 
     l2 = results[petsc]["l2"]
     order = log(l2[-1] / l2[-2]) / log(dy[-1] / dy[-2])
