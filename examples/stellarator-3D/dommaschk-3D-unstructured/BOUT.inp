@@ -11,8 +11,8 @@ timestep = 10000
 # Parallel heat conduction: petscoperator (support operators) is the default
 # on unstructured grids and is set here explicitly. It conserves energy
 # exactly, but on irregular meshes its solution error converges only at order
-# 0.7-1.4 (MMS-spatial-fci-unstructured). Use conduction_method = original for
-# second-order accuracy without exact energy conservation.
+# 0.6-1.4 (MMS-spatial-fci-unstructured). Use conduction_method = original for
+# order 2.8-3.8 accuracy without exact energy conservation.
 conduction_method = petscoperator
 
 [mesh]

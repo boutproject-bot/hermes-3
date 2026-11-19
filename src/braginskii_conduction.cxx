@@ -118,7 +118,7 @@ BraginskiiConduction::BraginskiiConduction(const std::string& name, Options& all
   // On unstructured FCI grids the support-operator method (matrices from the
   // grid file) is the default: it is conservative, whereas the original
   // flux form at interpolated points is not on FCI grids. On irregular meshes
-  // it converges only at order 0.7-1.4 in the solution (original: order 2);
+  // it converges only at order 0.6-1.4 in the solution (original: 2.8-3.8);
   // see docs/sphinx/solver_numerics.rst
   if (bout::globals::mesh->isUnstructured()) {
     conduction_method = bout::ConductionMethod::PetscOperator;

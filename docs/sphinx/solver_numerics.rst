@@ -402,9 +402,9 @@ The
 
       On irregular unstructured meshes its parallel divergence is not a
       consistent discretisation: the operator error does not converge, and
-      the steady-state solution error converges only at order 0.7--1.4
+      the steady-state solution error converges only at order 0.6--1.4
       (BOUT++ test ``MMS-spatial-fci-unstructured``). ``Original`` converges
-      at second order there but conserves energy only approximately. Use
+      at order 2.8--3.8 there but conserves energy only approximately. Use
       ``PetscOperator`` when exact energy conservation matters, and
       ``Original`` when accuracy does.
 
