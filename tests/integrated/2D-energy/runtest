@@ -71,7 +71,7 @@ if p_tot[-1] <= np.min(p_tot):
     )
     success = False
 
-# No net energy creation (tolerance well below the ~1e-3 converted to flow)
+# No net energy creation (tolerance well below the peak flow energy, ~6e-4)
 energy_change = 1.5 * (p_tot[-1] - p_tot[0]) + flow_energy[-1] - flow_energy[0]
 if energy_change > 1e-5:
     print(f"Total energy increased by {energy_change}")
