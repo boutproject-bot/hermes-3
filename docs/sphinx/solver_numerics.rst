@@ -400,6 +400,14 @@ The
       (FCI only). It is conservative by construction and is the default on
       unstructured FCI grids; ``Original`` is the default otherwise.
 
+      On irregular unstructured meshes its parallel divergence is not a
+      consistent discretisation: the operator error does not converge, and
+      the steady-state solution error converges only at order 0.7--1.4
+      (BOUT++ test ``MMS-spatial-fci-unstructured``). ``Original`` converges
+      at second order there but conserves energy only approximately. Use
+      ``PetscOperator`` when exact energy conservation matters, and
+      ``Original`` when accuracy does.
+
 The selected values are reported at startup in the Hermes-3 log and are
 also recorded in the options tree as ``slope_limiter`` and
 ``conduction_method``.

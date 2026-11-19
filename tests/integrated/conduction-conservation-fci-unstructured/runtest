@@ -10,6 +10,12 @@
 # V = A J dx dy dz and A the poloidal (dual-cell) area of each node
 # (dagp_us_volume; dx = dz = 1 on unstructured grids). The drift of the
 # original method is printed for comparison.
+#
+# The support-operator run sets no conduction_method, so it also checks that
+# petscoperator is the default on unstructured grids (BOUT.settings). Note:
+# petscoperator is conservative but converges only at order 0.7-1.4 in the
+# solution on irregular meshes (MMS-spatial-fci-unstructured, solution-error
+# check); original converges at order 2 but does not conserve exactly.
 
 import sys
 from pathlib import Path
@@ -25,12 +31,22 @@ with DataFile(gridfile) as grid:
 
 nproc = 1
 results = {}
+default_ok = False
 for method in ("petscoperator", "original"):
     shell("rm -f data/BOUT.dmp.*.nc")
-    args = f"conduction_method={method} mesh:file={gridfile}"
+    # petscoperator is the default on unstructured grids: run it unset
+    selection = "" if method == "petscoperator" else f"conduction_method={method} "
+    args = f"{selection}mesh:file={gridfile}"
     print("Running with " + args)
     _, out = launch_safe("../../../hermes-3 " + args, nproc=nproc, pipe=True)
     Path(f"run.log.{method}").write_text(out)
+    if method == "petscoperator":
+        settings = Path("data/BOUT.settings").read_text()
+        default_ok = any(
+            line.startswith("conduction_method = petscoperator")
+            and "source: default" in line
+            for line in settings.splitlines()
+        )
 
     mxg = int(collect("MXG", path="data", info=False))
     Pe = collect("Pe", path="data", info=False)[:, mxg:-mxg]
@@ -49,6 +65,9 @@ for method in ("petscoperator", "original"):
     )
 
 success = True
+if not default_ok:
+    print("petscoperator is not the default conduction_method on unstructured grids")
+    success = False
 drift, relaxed = results["petscoperator"]
 if drift > 1e-8:
     print(f"petscoperator does not conserve energy (drift {drift:.3e} > 1e-8)")
