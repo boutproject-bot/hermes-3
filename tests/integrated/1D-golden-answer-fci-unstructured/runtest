@@ -75,17 +75,25 @@ for var, lab in zip([Pe, Pi, Ni], ["Pe", "Pi", "Ni"]):
     print(f"{lab}: ", var[0])
 
 
-Nival = 0.35237138276962
+# Golden values: read from the structured test, so that both tests always use
+# the same values (they are updated there when the operators change)
+golden = {}
+for line in (
+    (this_dir.parent / "1D-golden-answer-fci" / "runtest").read_text().splitlines()
+):
+    name, _, value = line.partition("=")
+    if name.strip() in ("Nival", "Pival", "Peval") and value.strip():
+        golden[name.strip()] = float(value)
+Nival, Pival, Peval = golden["Nival"], golden["Pival"], golden["Peval"]
+
 if abs(Ni[0] - Nival) > tol:
     print("Density mismatch. ", abs(Ni[0] - Nival))
     success = False
 
-Pival = 0.2515733527238645
 if abs(Pi[0] - Pival) > tol:
     print("Pi mismatch. ", abs(Pi[0] - Pival))
     success = False
 
-Peval = 0.2795029870898116
 if abs(Pe[0] - Peval) > tol:
     print("Pe mismatch. ", abs(Pe[0] - Peval))
     success = False
