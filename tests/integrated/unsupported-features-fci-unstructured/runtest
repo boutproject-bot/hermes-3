@@ -15,6 +15,7 @@ from boututils.run_wrapper import launch, shell
 GUARD = "is not supported on unstructured FCI grids"
 COLOURING = "Jacobian colouring is not supported on unstructured meshes"
 INDEX_WARNING = "uses the index coordinate x or z on an unstructured mesh"
+WALL_NODES = "stores Dirichlet wall nodes in the x guard cells"
 
 # (name, command-line options, expect failure, expected text)
 CASES = [
@@ -49,6 +50,7 @@ CASES = [
     ("low_n_diffuse_perp", "h+:low_n_diffuse_perp=true", True, GUARD),
     ("hyper_z", "h+:hyper_z=0.1", True, GUARD),
     ("neumann_boundary_average_z", "Nh+:neumann_boundary_average_z=true", True, GUARD),
+    ("ordinary x boundary at wall nodes", "Nh+:bndry_xin=neumann", True, WALL_NODES),
     (
         "Jacobian colouring (SNES backward Euler)",
         "solver:type=beuler solver:use_coloring=true",
