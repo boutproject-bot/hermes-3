@@ -11,11 +11,13 @@
 # (dagp_us_volume; dx = dz = 1 on unstructured grids). The drift of the
 # original method is printed for comparison.
 #
-# The support-operator run sets no conduction_method, so it also checks that
-# petscoperator is the default on unstructured grids (BOUT.settings). Note:
-# petscoperator is conservative but converges only at order 0.6-1.4 in the
-# solution on irregular meshes (MMS-spatial-fci-unstructured, solution-error
-# check); original converges at order 2.8-3.8 but does not conserve exactly.
+# The flux-reconstructed method (petscoperatork2) is the default on
+# unstructured grids whose grid file has the k2_* matrices; this grid has
+# them, so its run sets no conduction_method and also checks that it is the
+# default (BOUT.settings). Both conservative methods (petscoperatork2 and the
+# support operators, petscoperator) must conserve to solver precision.
+# petscoperator converges only at order 0.6-1.4 in the solution on irregular
+# meshes; original converges at order 2.8-3.8 but does not conserve exactly.
 
 import sys
 from pathlib import Path
@@ -32,18 +34,20 @@ with DataFile(gridfile) as grid:
 nproc = 1
 results = {}
 default_ok = False
-for method in ("petscoperator", "original"):
+DEFAULT = "petscoperatork2"
+CONSERVATIVE = ("petscoperatork2", "petscoperator")
+for method in ("petscoperatork2", "petscoperator", "original"):
     shell("rm -f data/BOUT.dmp.*.nc")
-    # petscoperator is the default on unstructured grids: run it unset
-    selection = "" if method == "petscoperator" else f"conduction_method={method} "
+    # The default method is run with conduction_method unset
+    selection = "" if method == DEFAULT else f"conduction_method={method} "
     args = f"{selection}mesh:file={gridfile}"
     print("Running with " + args)
     _, out = launch_safe("../../../hermes-3 " + args, nproc=nproc, pipe=True)
     Path(f"run.log.{method}").write_text(out)
-    if method == "petscoperator":
+    if method == DEFAULT:
         settings = Path("data/BOUT.settings").read_text()
         default_ok = any(
-            line.startswith("conduction_method = petscoperator")
+            line.split("#")[0].strip() == f"conduction_method = {DEFAULT}"
             and "source: default" in line
             for line in settings.splitlines()
         )
@@ -66,17 +70,20 @@ for method in ("petscoperator", "original"):
 
 success = True
 if not default_ok:
-    print("petscoperator is not the default conduction_method on unstructured grids")
+    print(f"{DEFAULT} is not the default conduction_method on this unstructured grid")
     success = False
-drift, relaxed = results["petscoperator"]
-if drift > 1e-8:
-    print(f"petscoperator does not conserve energy (drift {drift:.3e} > 1e-8)")
-    success = False
-if relaxed > 0.9:
-    print(f"Conduction did not act (profile std ratio {relaxed:.3f} > 0.9)")
-    success = False
-if results["original"][0] <= drift:
-    print("Note: original conserves at least as well as petscoperator here")
+for method in CONSERVATIVE:
+    drift, relaxed = results[method]
+    if drift > 1e-8:
+        print(f"{method} does not conserve energy (drift {drift:.3e} > 1e-8)")
+        success = False
+    if relaxed > 0.9:
+        print(
+            f"{method}: conduction did not act (profile std ratio {relaxed:.3f} > 0.9)"
+        )
+        success = False
+    if results["original"][0] <= drift:
+        print(f"Note: original conserves at least as well as {method} here")
 
 if success:
     print(" => Test passed")

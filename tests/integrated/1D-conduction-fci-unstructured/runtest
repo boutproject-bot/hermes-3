@@ -43,7 +43,9 @@ nproc = 1
 
 var = "Pe"
 
-petsc_options = ["original", "petscoperator"]
+# petscoperatork2: flux-reconstructed divergence (k2_* matrices in the grid,
+# the unstructured default when present)
+petsc_options = ["original", "petscoperator", "petscoperatork2"]
 
 results = {}
 # Overall result: every conduction method must reach the expected order

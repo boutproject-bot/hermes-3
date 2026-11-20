@@ -49,12 +49,17 @@ least `MXG` nodes; BOUT++ chooses a valid split automatically.
 ```bash
 mpirun -np 8 hermes-3 -d .
 ```
-On unstructured grids the parallel heat conduction uses the conservative
-support-operator method (`conduction_method = petscoperator`) by default; the
-input sets it explicitly. It conserves energy exactly, but on irregular meshes
-its solution error converges only at order 0.6-1.4, against order 2.8-3.8 for
-`conduction_method = original`, which does not conserve energy exactly.
-Choose `original` when accuracy matters more than exact conservation. On 8
+On unstructured grids the parallel heat conduction uses the
+flux-reconstructed conservative divergence (`conduction_method =
+petscoperatork2`) by default when the grid file contains its matrices
+(`k2_*`, written by `create_grid.py` with current zoidberg; grid generation
+then takes about 270 s and the file is about 525 MB). It is second order on
+the gmsh meshes (centroid unknowns) and conserves energy exactly, but has no
+discrete energy estimate. Grid files without these matrices fall back to the
+support-operator method (`petscoperator`): exactly conservative with an
+energy estimate, but its solution error converges only at order 0.6-1.4 on
+irregular meshes. `conduction_method = original` converges at order 2.8-3.8
+but does not conserve energy exactly. On 8
 cores, t = 10^4 (the default `nout = 100`, `timestep = 100`) took about 10 min, against
 about 19 min for the structured example (see the unstructured-FCI follow-up
 reports for a detailed comparison). The grid generation needs about 1.4 GB of
@@ -71,9 +76,9 @@ python ../compare_profiles.py ../dommaschk-3D ../dommaschk-3D/dommaschk_68_8_512
     . dommaschk_unstructured_8_0.003.fci.nc
 ```
 
-At t = 10^4 the largest difference per bin (10 bins) was 0.012 with
-`conduction_method = petscoperator` and 0.033 with `original`; the script
-fails above 0.015. With `original`, the inner half heats up relative to the
-structured run (the method does not conserve energy exactly), so the
-support-operator default agrees better with the structured profiles in this
-example despite its lower MMS order.
+At t = 10^4 the largest difference per bin (10 bins) was 0.008 with
+`petscoperatork2`, 0.012 with `petscoperator` and 0.033 with `original`; the
+script fails above 0.015. With `original`, the inner half heats up relative to
+the structured run (the method does not conserve energy exactly), so the
+conservative methods agree better with the structured profiles in this
+example. With `petscoperatork2`, the run to t = 10^4 took 7 min on 4 cores.

@@ -8,12 +8,12 @@
 nout = 100
 timestep = 100
 
-# Parallel heat conduction: petscoperator (support operators) is the default
-# on unstructured grids and is set here explicitly. It conserves energy
-# exactly, but on irregular meshes its solution error converges only at order
-# 0.6-1.4 (MMS-spatial-fci-unstructured). Use conduction_method = original for
-# order 2.8-3.8 accuracy without exact energy conservation.
-conduction_method = petscoperator
+# Parallel heat conduction: not set, so the unstructured default is used:
+# petscoperatork2 (flux-reconstructed divergence, second order and exactly
+# conservative) when the grid file has the k2_* matrices (written by current
+# zoidberg, create_grid.py), otherwise petscoperator (support operators,
+# conservative but order 0.6-1.4 on irregular meshes). conduction_method =
+# original converges at order 2.8-3.8 but does not conserve energy exactly.
 
 [mesh]
 

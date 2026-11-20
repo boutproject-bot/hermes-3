@@ -115,13 +115,20 @@ BraginskiiConduction::BraginskiiConduction(const std::string& name, Options& all
   }
   substitutePermissions("sp", species);
 
-  // On unstructured FCI grids the support-operator method (matrices from the
-  // grid file) is the default: it is conservative, whereas the original
-  // flux form at interpolated points is not on FCI grids. On irregular meshes
-  // it converges only at order 0.6-1.4 in the solution (original: 2.8-3.8);
-  // see docs/sphinx/solver_numerics.rst
+  // On unstructured FCI grids a conservative method using matrices from the
+  // grid file is the default (the original flux form at interpolated points
+  // is not conservative on FCI grids):
+  // - PetscOperatorK2 if the grid has the flux-reconstructed divergence
+  //   (k2_* matrices, written by zoidberg): second order on irregular meshes
+  //   with centroid unknowns, exactly conservative, but without the energy
+  //   estimate of the support operators;
+  // - otherwise PetscOperator (support operators): conservative with an
+  //   energy estimate, but only order 0.6-1.4 on irregular meshes.
+  // See docs/sphinx/solver_numerics.rst
   if (bout::globals::mesh->isUnstructured()) {
-    conduction_method = bout::ConductionMethod::PetscOperator;
+    conduction_method = bout::globals::mesh->sourceHasVar("k2_forward_weights")
+                            ? bout::ConductionMethod::PetscOperatorK2
+                            : bout::ConductionMethod::PetscOperator;
   }
   conduction_method = alloptions["conduction_method"].withDefault(conduction_method);
 }
