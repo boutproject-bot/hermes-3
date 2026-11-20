@@ -111,6 +111,10 @@ jobs:
                  liblapack-dev
                  libparpack2-dev
                  libhypre-dev
+                 libglu1-mesa
+                 libxcursor1
+                 libxft2
+                 libxinerama1
 
       - uses: actions/checkout@v5
         with:
