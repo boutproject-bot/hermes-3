@@ -11,6 +11,7 @@
 #include <bout/field_factory.hxx>
 #include <bout/fv_ops.hxx>
 #include <bout/globals.hxx>
+#include <bout/mesh.hxx>
 #include <bout/options.hxx>
 #include <bout/output.hxx>
 #include <bout/solver.hxx>
@@ -114,25 +115,22 @@ BraginskiiConduction::BraginskiiConduction(const std::string& name, Options& all
   }
   substitutePermissions("sp", species);
 
-  conduction_method = alloptions["conduction_method"].withDefault(conduction_method);
-
-  use_petsc_operator =
-      alloptions["use_petsc_operator"]
-          .doc("Use Petsc for parallel heat conduction. Grids need the weights.")
-          .withDefault<bool>(false);
-
-  if (use_petsc_operator) {
-
-    if (!mesh->isFci()) {
-      throw BoutException("Used Petsc operator for Braginskii conduction without Fci!");
-    }
-#if BOUT_HAS_PETSC
-    PetscOperators ops(mesh);
-    petsc_parallel = ops.getParallel();
-#else
-    throw BoutException("petsc_operator requires PETSc");
-#endif
+  // On unstructured FCI grids a conservative method using matrices from the
+  // grid file is the default (the original flux form at interpolated points
+  // is not conservative on FCI grids):
+  // - PetscOperatorK2 if the grid has the flux-reconstructed divergence
+  //   (k2_* matrices, written by zoidberg): second order on irregular meshes
+  //   with centroid unknowns, exactly conservative, but without the energy
+  //   estimate of the support operators;
+  // - otherwise PetscOperator (support operators): conservative with an
+  //   energy estimate, but only order 0.6-1.4 on irregular meshes.
+  // See docs/sphinx/solver_numerics.rst
+  if (bout::globals::mesh->isUnstructured()) {
+    conduction_method = bout::globals::mesh->sourceHasVar("k2_forward_weights")
+                            ? bout::ConductionMethod::PetscOperatorK2
+                            : bout::ConductionMethod::PetscOperator;
   }
+  conduction_method = alloptions["conduction_method"].withDefault(conduction_method);
 }
 
 void BraginskiiConduction::transform_impl(GuardedOptions& state) {
@@ -305,18 +303,22 @@ void BraginskiiConduction::transform_impl(GuardedOptions& state) {
       kappa_par.applyParallelBoundary("parallel_neumann_o1");
 
     } else {
+      // Copy into all y guard rows (only the first is used by the fluxes; the
+      // others would otherwise hold values computed from unset guard cells)
       for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
         for (int jz = 0; jz < mesh->LocalNz; jz++) {
           auto i = indexAt(kappa_par, r.ind, mesh->ystart, jz);
-          auto im = i.ym();
-          kappa_par[im] = kappa_par[i];
+          for (int k = 1; k <= mesh->ystart; k++) {
+            kappa_par[i.ym(k)] = kappa_par[i];
+          }
         }
       }
       for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
         for (int jz = 0; jz < mesh->LocalNz; jz++) {
           auto i = indexAt(kappa_par, r.ind, mesh->yend, jz);
-          auto ip = i.yp();
-          kappa_par[ip] = kappa_par[i];
+          for (int k = 1; k < mesh->LocalNy - mesh->yend; k++) {
+            kappa_par[i.yp(k)] = kappa_par[i];
+          }
         }
       }
     }
@@ -326,16 +328,14 @@ void BraginskiiConduction::transform_impl(GuardedOptions& state) {
     set(species["kappa_par"], kappa_par);
 
     // Petsc can be used to calculate the divergence of the heat flux
-    if (use_petsc_operator) {
-#if BOUT_HAS_PETSC
-      add(species["energy_source"], petsc_parallel.Div_par_K_Grad_par(kappa_par, T));
-#endif
-    } else {
-      add(species["energy_source"],
-          Div_par_K_Grad_par_mod(kappa_par, T, flow_ylow_conduction, false,
-                                 conduction_method));
-      add(species["energy_flow_ylow"], flow_ylow_conduction);
+    Field3D conduction_source = Div_par_K_Grad_par_mod(kappa_par, T, flow_ylow_conduction,
+                                                       false, conduction_method);
+    if (all_diagnose[name]) {
+      all_conduction_source[name] = conduction_source;
     }
+    add(species["energy_source"], conduction_source);
+    add(species["energy_flow_ylow"], flow_ylow_conduction);
+
     if (state.isSection("fields") and IS_SET(state["fields:Apar_flutter"])) {
       // Magnetic flutter term. The operator splits into 4 pieces:
       // Div(k b b.Grad(T)) = Div(k b0 b0.Grad(T)) + Div(k d0 db.Grad(T))
@@ -386,6 +386,15 @@ void BraginskiiConduction::outputVars(Options& state) {
                     {"long_name", "collision frequency for conduction"},
                     {"species", name},
                     {"source", "evolve_pressure"}});
+
+    set_with_attrs(state[fmt::format("E{}_cond", name)], all_conduction_source[name],
+                   {{"time_dimension", "t"},
+                    {"units", "W / m^3"},
+                    {"conversion", Pnorm * Omega_ci},
+                    {"standard_name", "energy source"},
+                    {"long_name", name + " parallel conduction energy source"},
+                    {"species", name},
+                    {"source", "braginskii_conduction"}});
 
     set_with_attrs(state[fmt::format("ef{}_cond_ylow", name)], flow_ylow_conduction,
                    {{"time_dimension", "t"},

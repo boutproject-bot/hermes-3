@@ -1,4 +1,5 @@
 #include "../include/polarisation_drift.hxx"
+#include "../include/hermes_utils.hxx"
 
 #include <bout/constants.hxx>
 #include <bout/difops.hxx>
@@ -17,6 +18,7 @@ PolarisationDrift::PolarisationDrift(std::string name, Options& alloptions,
                             readIfSet("species:{charged}:momentum"),
                             readIfSet("fields:{fields}"),
                             readWrite("species:{charged}:{outputs}")}) {
+  requireStructuredMesh("Component polarisation_drift");
 
   // Get options for this component
   auto& options = alloptions[name];

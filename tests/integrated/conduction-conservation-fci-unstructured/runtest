@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+
+# Energy conservation of parallel heat conduction on an unstructured FCI grid.
+#
+# Closed field lines (sheared slab, no parallel boundaries) and genuine
+# interpolation between independently stored planes. Electrons only, fixed
+# density, pressure evolved by Braginskii conduction. The support-operator
+# method (conduction_method = petscoperator, the default on unstructured
+# grids) conserves the physical total sum(V * Pe) to solver precision, with
+# V = A J dx dy dz and A the poloidal (dual-cell) area of each node
+# (dagp_us_volume; dx = dz = 1 on unstructured grids). The drift of the
+# original method is printed for comparison.
+#
+# The flux-reconstructed method (petscoperatork2) is the default on
+# unstructured grids whose grid file has the k2_* matrices; this grid has
+# them, so its run sets no conduction_method and also checks that it is the
+# default (BOUT.settings). Both conservative methods (petscoperatork2 and the
+# support operators, petscoperator) must conserve to solver precision.
+# petscoperator converges only at order 0.6-1.4 in the solution on irregular
+# meshes; original converges at order 2.8-3.8 but does not conserve exactly.
+
+import sys
+from pathlib import Path
+
+from boutdata.collect import collect
+from boututils.datafile import DataFile
+from boututils.run_wrapper import launch_safe, shell
+from numpy import abs, max, std, sum
+
+gridfile = "../../../grids/fci_unstructured/US_closed/US_closed_16.fci.grid.nc"
+with DataFile(gridfile) as grid:
+    area = grid["dagp_us_volume"]
+
+nproc = 1
+results = {}
+default_ok = False
+DEFAULT = "petscoperatork2"
+CONSERVATIVE = ("petscoperatork2", "petscoperator")
+for method in ("petscoperatork2", "petscoperator", "original"):
+    shell("rm -f data/BOUT.dmp.*.nc")
+    # The default method is run with conduction_method unset
+    selection = "" if method == DEFAULT else f"conduction_method={method} "
+    args = f"{selection}mesh:file={gridfile}"
+    print("Running with " + args)
+    _, out = launch_safe("../../../hermes-3 " + args, nproc=nproc, pipe=True)
+    Path(f"run.log.{method}").write_text(out)
+    if method == DEFAULT:
+        settings = Path("data/BOUT.settings").read_text()
+        default_ok = any(
+            line.split("#")[0].strip() == f"conduction_method = {DEFAULT}"
+            and "source: default" in line
+            for line in settings.splitlines()
+        )
+
+    mxg = int(collect("MXG", path="data", info=False))
+    Pe = collect("Pe", path="data", info=False)[:, mxg:-mxg]
+    dV = (
+        collect("J", path="data", info=False)
+        * collect("dx", path="data", info=False)
+        * collect("dy", path="data", info=False)
+        * collect("dz", path="data", info=False)
+    )[mxg:-mxg] * area[mxg:-mxg]
+    energy = sum(Pe * dV, axis=(1, 2, 3))
+    drift = max(abs(energy - energy[0])) / energy[0]
+    relaxed = std(Pe[-1]) / std(Pe[0])
+    results[method] = (drift, relaxed)
+    print(
+        f"{method}: relative energy drift {drift:.3e}, profile std ratio {relaxed:.3f}"
+    )
+
+success = True
+if not default_ok:
+    print(f"{DEFAULT} is not the default conduction_method on this unstructured grid")
+    success = False
+for method in CONSERVATIVE:
+    drift, relaxed = results[method]
+    if drift > 1e-8:
+        print(f"{method} does not conserve energy (drift {drift:.3e} > 1e-8)")
+        success = False
+    if relaxed > 0.9:
+        print(
+            f"{method}: conduction did not act (profile std ratio {relaxed:.3f} > 0.9)"
+        )
+        success = False
+    if results["original"][0] <= drift:
+        print(f"Note: original conserves at least as well as {method} here")
+
+if success:
+    print(" => Test passed")
+    sys.exit(0)
+print(" => Test failed")
+sys.exit(1)

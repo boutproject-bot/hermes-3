@@ -67,6 +67,7 @@ BoutReal apply_limiter(BoutReal unlimited, BoutReal max,
 
 NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver* solver)
     : NamedComponent(name, {readWrite("species:{name}:{outputs}")}), name(name) {
+  requireStructuredMesh("Component neutral_mixed");
 
   // Normalisations
   const Options& units = alloptions["units"];

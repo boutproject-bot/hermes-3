@@ -120,6 +120,20 @@ Field3D Div_n_bxGrad_f_B_XPPM(const Field3D& n, const Field3D& f, bool bndry_flu
                               bool poloidal, bool positive) {
   Field3D result{0.0};
 
+  if (mesh->isUnstructured()) {
+    // The ExB advection uses structured x/z neighbours: on unstructured
+    // grids (nz = 1) the X-Z part is zero, and the X-Y part (poloidal = true)
+    // throws in toFieldAligned. Not a throw here, because phi may be set only
+    // as a diagnostic (sheath_boundary_fci always_set_phi).
+    static bool warned = false;
+    if (not warned) {
+      output_warn.write("WARNING: ExB advection (Div_n_bxGrad_f_B_XPPM) is not "
+                        "implemented on unstructured FCI grids: the X-Z flow is zero "
+                        "(and poloidal_flows = true fails in toFieldAligned)\n");
+      warned = true;
+    }
+  }
+
   Coordinates* coord = mesh->getCoordinates();
 
   //////////////////////////////////////////

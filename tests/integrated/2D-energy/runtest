@@ -27,10 +27,21 @@ Path("run.log").write_text(out)
 # Collect data
 pe = collect("Pe", path=path, info=False)
 pi = collect("Ph+", path=path, info=False)
+vort = collect("Vort", path=path, info=False)
+phi = collect("phi", path=path, info=False)
 
-pe_tot = np.mean(pe[:, 2:-2, 0, :], axis=(1, 2))
-pi_tot = np.mean(pi[:, 2:-2, 0, :], axis=(1, 2))
+
+def domain_mean(f):
+    return np.mean(f[:, 2:-2, 0, :], axis=(1, 2))
+
+
+pe_tot = domain_mean(pe)
+pi_tot = domain_mean(pi)
 p_tot = pe_tot + pi_tot
+
+# Perpendicular flow energy 1/2 (A/B^2) |Grad(phi + Pi)|^2, integrated by parts.
+# Pi_hat = Ph+ because A = Z = average_atomic_mass = 1.
+flow_energy = -0.5 * domain_mean((phi + pi) * vort)
 
 success = True
 
@@ -44,9 +55,26 @@ if pi_tot[-1] < pi_tot[0]:
     print(f"Expected final Ph+ ({pi_tot[-1]}) to be higher than initial ({pi_tot[0]})")
     success = False
 
-# Expect total pressure to rise
-if p_tot[-1] < p_tot[0]:
-    print(f"Expected final P ({p_tot[-1]}) to be higher than initial ({p_tot[0]})")
+# The run starts at rest, so energy conservation (3/2 P + flow energy)
+# does not allow the total pressure to end above its initial value.
+# Thermal energy is first converted to flow; viscosity must then
+# dissipate the flow and return its energy as heat.
+if flow_energy[-1] > 0.1 * np.max(flow_energy):
+    print(
+        f"Expected flow energy to be dissipated: final {flow_energy[-1]}, peak {np.max(flow_energy)}"
+    )
+    success = False
+
+if p_tot[-1] <= np.min(p_tot):
+    print(
+        f"Expected final P ({p_tot[-1]}) to recover above its minimum ({np.min(p_tot)})"
+    )
+    success = False
+
+# No net energy creation (tolerance well below the peak flow energy, ~6e-4)
+energy_change = 1.5 * (p_tot[-1] - p_tot[0]) + flow_energy[-1] - flow_energy[0]
+if energy_change > 1e-5:
+    print(f"Total energy increased by {energy_change}")
     success = False
 
 if success:

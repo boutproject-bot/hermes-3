@@ -290,7 +290,8 @@ void SheathBoundaryFci::transform_impl(GuardedOptions& state) {
                                        ? getNonFinal<Field3D>(electrons["energy_source"])
                                        : zeroFrom(Ne);
 
-  hflux_e = zeroFrom(electron_energy_source); // sheath heat flux for diagnostics
+  hflux_e = zeroFrom(electron_energy_source);    // sheath heat flux for diagnostics
+  Field3D electron_sheath_source = zeroFrom(Ne); // sheath part only (diagnostics)
 
   mesh->getCoordinates()->getYBoundary().iter([&](auto& pnt) {
     const auto& i = pnt.ind();
@@ -332,8 +333,13 @@ void SheathBoundaryFci::transform_impl(GuardedOptions& state) {
       const BoutReal power = flux / coord->cell_volume()[i];
 
       electron_energy_source[i] -= pnt.dir() * power;
+      electron_sheath_source[i] -= pnt.dir() * power;
     }
   }); // End of yboundary.iter
+
+  if (diagnose) {
+    diagnostics["e"]["energy_source"] = electron_sheath_source;
+  }
 
   // Set electron density and temperature, now with boundary conditions
   // Note: Clear parallel slices because they do not contain boundary conditions.
@@ -399,6 +405,7 @@ void SheathBoundaryFci::transform_impl(GuardedOptions& state) {
 
     // Initialise sheath ion heat flux. This will be created for each species
     // saved in diagnostics struct and then destroyed and re-created for next species
+    Field3D sheath_source = zeroFrom(Ni);
 
     mesh->getCoordinates()->getYBoundary().iter([&](auto& pnt) {
       const auto& i = pnt.ind();
@@ -443,8 +450,13 @@ void SheathBoundaryFci::transform_impl(GuardedOptions& state) {
 
         const BoutReal power = flux / coord->cell_volume()[i];
         energy_source[i] -= pnt.dir() * power;
+        sheath_source[i] -= pnt.dir() * power;
       }
     }); // End of yboundary.iter
+
+    if (diagnose) {
+      diagnostics[kv.first]["energy_source"] = sheath_source;
+    }
 
     // Finished boundary conditions for this species
     // Put the modified fields back into the state.

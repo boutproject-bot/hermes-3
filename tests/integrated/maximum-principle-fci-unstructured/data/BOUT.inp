@@ -1,0 +1,44 @@
+# Maximum principle on an unstructured FCI grid with curved walls: pure
+# perpendicular (anomalous) diffusion of a smooth profile on the gmsh
+# annulus, Dirichlet walls at 1 (inner) and 0.1 (outer). The density must
+# stay between the wall values at all times.
+
+nout = 10
+timestep = 1e5
+
+[mesh]
+file = "../../../grids/fci_unstructured/US_annulus/US_annulus_32.fci.grid.nc"
+extrapolate_y = false
+
+[mesh:paralleltransform]
+type = fci
+
+[mesh:paralleltransform:xzinterpolation]
+type = precomputed
+
+[input:grid_variables]
+R = field3d
+Z = field3d
+
+[solver]
+mxstep = 100000
+rtol = 1e-8
+atol = 1e-12
+
+[hermes]
+components = h+
+
+Nnorm = 1e18
+Bnorm = 1
+Tnorm = 5
+
+[h+]
+type = evolve_density, anomalous_diffusion
+charge = 1.0
+AA = 1.0
+anomalous_D = 1.0
+
+[Nh+]
+function = 0.55 + 0.35 * sin(18.84955592 * gridvar:R) * cos(12.56637061 * gridvar:Z)
+bndry_xin = dirichlet_node(1.0)
+bndry_xout = dirichlet_node(0.1)

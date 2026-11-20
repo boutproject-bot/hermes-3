@@ -1,0 +1,55 @@
+# Heat balance with sheath boundaries and parallel conduction on an
+# unstructured FCI grid with parallel walls: fixed density, evolving electron
+# and ion pressure, no sources. Conduction uses the support-operator method
+# (default on unstructured grids) with bndry_flux = false, so the energy
+# leaves only through the sheath energy sinks.
+
+nout = 40
+timestep = 1000
+
+[mesh]
+file = "../../../grids/fci_unstructured/US_slab_with_BC/US_slab_with_BC_256.fci.grid.nc"
+extrapolate_y = false
+
+[mesh:paralleltransform]
+type = fci
+
+[mesh:paralleltransform:xzinterpolation]
+type = precomputed
+
+[solver]
+mxstep = 100000
+rtol = 1e-9
+atol = 1e-12
+
+[hermes]
+components = (h+, e, sheath_boundary_fci, braginskii_collisions, braginskii_conduction)
+
+Nnorm = 1e19
+Bnorm = 1
+Tnorm = 50
+
+[sheath_boundary_fci]
+diagnose = true
+
+[h+]
+type = fixed_density, evolve_pressure
+AA = 1
+charge = 1
+density = 1e19  # [m^-3]
+thermal_conduction = true
+
+[Ph+]
+function = 1 + 0.5 * sin(y)
+bndry_all = neumann
+
+[e]
+type = fixed_density, evolve_pressure
+AA = 1.0 / 1836.0
+charge = -1
+density = 1e19  # [m^-3]
+thermal_conduction = true
+
+[Pe]
+function = 1 + 0.5 * sin(y)
+bndry_all = neumann

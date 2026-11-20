@@ -17,7 +17,7 @@ type = shifted
 [solver]
 #type = beuler
 #pc_type = hypre
-type = cvode
+type = pvode
 mxstep=10000
 
 atol = 1e-7

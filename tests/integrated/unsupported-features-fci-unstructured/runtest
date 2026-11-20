@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+
+# Components and options that use structured (index-space) perpendicular
+# operators, x-boundary loops, Laplacian inversions or Jacobian colouring
+# must stop with a clear error on unstructured FCI grids instead of giving
+# silently wrong results (audit finding B1, B2, B3, B4). Also checks that the
+# base input runs and that an expression in the index coordinate x gives a
+# warning (I9).
+
+import sys
+from pathlib import Path
+
+from boututils.run_wrapper import launch, shell
+
+GUARD = "is not supported on unstructured FCI grids"
+COLOURING = "Jacobian colouring is not supported on unstructured meshes"
+INDEX_WARNING = "uses the index coordinate x or z on an unstructured mesh"
+
+# (name, command-line options, expect failure, expected text)
+CASES = [
+    ("base input", "", False, None),
+    ("index coordinate x", "'Nh+:function=1+0.1*x'", False, INDEX_WARNING),
+    (
+        "neutral_mixed",
+        "hermes:components=h+,d d:type=neutral_mixed d:AA=2",
+        True,
+        GUARD,
+    ),
+    ("classical_diffusion", "hermes:components=h+,classical_diffusion", True, GUARD),
+    ("vorticity", "hermes:components=h+,vorticity", True, GUARD),
+    ("relax_potential", "hermes:components=h+,relax_potential", True, GUARD),
+    ("electromagnetic", "hermes:components=h+,electromagnetic", True, GUARD),
+    ("polarisation_drift", "hermes:components=h+,polarisation_drift", True, GUARD),
+    ("diamagnetic_drift", "hermes:components=h+,diamagnetic_drift", True, GUARD),
+    (
+        "ion viscosity (perpendicular)",
+        "hermes:components=h+,braginskii_ion_viscosity "
+        "braginskii_ion_viscosity:perpendicular=true",
+        True,
+        GUARD,
+    ),
+    (
+        "SOL recycling",
+        "hermes:components=h+,recycling recycling:species=h+ "
+        "h+:recycle_as=h+ h+:sol_recycle=true",
+        True,
+        GUARD,
+    ),
+    ("low_n_diffuse_perp", "h+:low_n_diffuse_perp=true", True, GUARD),
+    ("hyper_z", "h+:hyper_z=0.1", True, GUARD),
+    ("neumann_boundary_average_z", "Nh+:neumann_boundary_average_z=true", True, GUARD),
+    (
+        "Jacobian colouring (SNES backward Euler)",
+        "solver:type=beuler solver:use_coloring=true",
+        True,
+        COLOURING,
+    ),
+]
+
+failures = []
+log = []
+for name, options, expect_failure, text in CASES:
+    shell("rm -f data/BOUT.dmp.*.nc")
+    status, out = launch(f"../../../hermes-3 -q {options}", nproc=1, pipe=True)
+    log.append(f"==== {name}: {options}\n{out}")
+    ok = (status != 0) == expect_failure and (text is None or text in out)
+    result = "stopped" if status != 0 else "ran"
+    print(f"{name:50s} {result:8s} {'PASS' if ok else 'FAIL'}")
+    if not ok:
+        failures.append(name)
+
+Path("run.log").write_text("\n".join(log))
+
+if failures:
+    print(" => Test failed:", ", ".join(failures))
+    sys.exit(1)
+print(" => Test passed")
+sys.exit(0)

@@ -185,6 +185,13 @@ EvolvePressure::EvolvePressure(std::string name, Options& alloptions, Solver* so
                            .doc("Include parallel heat conduction?")
                            .withDefault<bool>(true);
 
+  requireStructuredMesh("low_n_diffuse_perp", low_n_diffuse_perp);
+  requireStructuredMesh("low_T_diffuse_perp", low_T_diffuse_perp);
+  requireStructuredMesh("low_p_diffuse_perp", low_p_diffuse_perp);
+  requireStructuredMesh("hyper_z", hyper_z > 0.);
+  requireStructuredMesh("hyper_z_T", hyper_z_T > 0.);
+  requireStructuredMesh("neumann_boundary_average_z", neumann_boundary_average_z);
+
   if (source_time_dependent) {
     setPermissions(readOnly("time"));
   }

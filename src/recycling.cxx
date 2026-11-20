@@ -180,6 +180,14 @@ Recycling::Recycling(std::string name, Options& alloptions, Solver*)
                        .withDefault<bool>(false);
   }
 
+  // SOL/PFR recycling and the pump read radial flows at the x guard cells and
+  // use structured volumes; target recycling loops over the y boundaries,
+  // which FCI grids (y-periodic, with parallel boundaries) do not have
+  requireStructuredMesh("SOL recycling (sol_recycle)", sol_recycle);
+  requireStructuredMesh("PFR recycling (pfr_recycle)", pfr_recycle);
+  requireStructuredMesh("Neutral pump (neutral_pump)", neutral_pump);
+  requireStructuredMesh("Target recycling (target_recycle)", target_recycle);
+
   if (sol_recycle or pfr_recycle) {
     setPermissions(readIfSet("species:{from}:energy_flow_xlow"));
     setPermissions(readIfSet("species:{from}:particle_flow_xlow"));
