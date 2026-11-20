@@ -49,3 +49,6 @@ tests/integrated/*-fci-unstructured*/data/
 !tests/integrated/unsupported-features-fci-unstructured/data/
 !tests/integrated/sheath-heat-balance-fci-unstructured/data/
 !tests/integrated/wall-exchange-fci-unstructured/data/
+
+# Generated at run time by tests/integrated/1D-golden-answer-fci/runtest (T-042)
+tests/integrated/1D-golden-answer-fci/balance*/
