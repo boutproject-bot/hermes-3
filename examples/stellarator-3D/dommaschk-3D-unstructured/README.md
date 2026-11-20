@@ -59,3 +59,21 @@ cores, t = 10^4 (the default `nout = 100`, `timestep = 100`) took about 10 min, 
 about 19 min for the structured example (see the unstructured-FCI follow-up
 reports for a detailed comparison). The grid generation needs about 1.4 GB of
 memory at the default 3 mm mesh size (2 GB at 2.5 mm).
+
+# Comparing with the structured example
+
+`../compare_profiles.py` bins Pe and Ph+ of both runs by `flux_label` and
+compares the change since t = 0 per bin (the structured example must be run
+to the same output times, e.g. `nout=100 timestep=100`):
+
+```bash
+python ../compare_profiles.py ../dommaschk-3D ../dommaschk-3D/dommaschk_68_8_512.fci.grid.nc \
+    . dommaschk_unstructured_8_0.003.fci.nc
+```
+
+At t = 10^4 the largest difference per bin (10 bins) was 0.012 with
+`conduction_method = petscoperator` and 0.033 with `original`; the script
+fails above 0.015. With `original`, the inner half heats up relative to the
+structured run (the method does not conserve energy exactly), so the
+support-operator default agrees better with the structured profiles in this
+example despite its lower MMS order.
