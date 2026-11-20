@@ -1,0 +1,92 @@
+# Reference electron-ion transport input (T-106) on the geometry of
+# 1D-golden-answer-fci, with a source that varies in R. The runtest also runs
+# it on the matching unstructured grid.
+
+nout = 10
+timestep = 1000
+
+[mesh:paralleltransform]
+type = fci
+
+[mesh]
+file = "../../../grids/slab_with_BC/MMS_straight_slab_8_256_4_True.fci.grid.nc"
+
+[input:grid_variables]
+R = field3d
+
+[solver]
+mxstep = 10000
+type = pvode
+rtol = 1e-5
+atol = 1e-8
+
+[hermes]
+components = (h+, e, sound_speed, braginskii_collisions, braginskii_friction,
+              braginskii_heat_exchange, sheath_boundary_fci, braginskii_ion_viscosity,
+              braginskii_conduction)
+
+Nnorm = 1e19  # Reference density [m^-3]
+Bnorm = 1     # Reference magnetic field [T]
+Tnorm = 50    # Reference temperature [eV]
+
+[braginskii_collisions]
+electron_ion = true
+neutral_neutral = false
+ion_neutral = false
+electron_neutral = false
+
+[sheath_boundary_fci]
+gamma_e = 6.5
+gamma_i = 4.5
+
+[sound_speed]
+electron_dynamics = false
+
+################################################################
+# Ions
+
+[h+]
+type = evolve_density, evolve_momentum, evolve_pressure, anomalous_diffusion
+p_div_v = true
+
+AA = 1
+charge = 1
+thermal_conduction = true
+anomalous_D = 10    # [m^2/s]
+anomalous_chi = 10  # [m^2/s]
+
+[Nh+]
+function = 1.0
+bndry_all = neumann
+
+flux = 1e22
+# R in [1.5, 2.5]: the source is 3 times larger at the inner than at the outer edge
+source = flux * gauss(y - pi, 0.25) * (1 + 0.5 * cos(pi * (gridvar:R - 1.5)))
+
+[NVh+]
+function = 0.0
+bndry_all = neumann
+
+[Ph+]
+function = 1.0
+bndry_all = neumann
+
+heating = 1e5
+T_source = heating / (`Nh+`:flux * 1.602e-19 * 1.5)
+source =  `Nh+`:source * T_source * 1.602176634e-19
+
+################################################################
+# Electrons
+
+[e]
+type = quasineutral, zero_current, evolve_pressure
+
+AA = 1.0 / 1836.0
+charge = -1
+thermal_conduction = true
+
+[Pe]
+function = 1.0
+bndry_all = neumann
+
+source = `Ph+`:source

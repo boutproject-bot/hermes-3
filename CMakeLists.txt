@@ -536,6 +536,10 @@ if(HERMES_TESTS)
   hermes_add_integrated_test(
     maximum-principle-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
     BOUT_HAS_PETSC zoidberg_unstructured_FOUND gmsh_FOUND)
+  # Reference electron-ion input on matching structured and unstructured grids
+  hermes_add_integrated_test(
+    reference-input-fci-unstructured REQUIRES BOUT_USE_METRIC_3D BOUT_HAS_PETSC
+    zoidberg_unstructured_FOUND)
   # Variant on a gmsh annulus with two curved Dirichlet walls
   hermes_add_integrated_test(
     2D-density-anomalous-fci-unstructured-annulus GENERATES_INPUT REQUIRES BOUT_USE_METRIC_3D
