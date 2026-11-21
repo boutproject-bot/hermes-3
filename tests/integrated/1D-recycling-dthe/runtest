@@ -5,6 +5,7 @@
 import pathlib
 import sys
 
+import netCDF4
 import numpy
 import xhermes
 from boututils.run_wrapper import launch
@@ -169,5 +170,17 @@ for name, target in diags_ref.items():
     except KeyError:
         print(f" *** Diagnostic '{name}' missing from test data ***")
         end_test(False)
+
+# Every saved field must be finite in every cell, guard cells included, at
+# every output after the initial one (the t = 0 output can contain time
+# derivatives in guard cells that no RHS evaluation has set yet)
+with netCDF4.Dataset(output_path) as dump:
+    for name, var in dump.variables.items():
+        values = numpy.asarray(var[:])
+        if values.dtype.kind != "f" or var.dimensions[:1] != ("t",) or values.ndim < 3:
+            continue
+        if not numpy.isfinite(values[1:]).all():
+            print(f" *** Field '{name}' has non-finite values ***")
+            success = False
 
 end_test(success)
