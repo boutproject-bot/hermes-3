@@ -55,8 +55,7 @@ Bnorm = 1
 Tnorm = 100
 
 [solver]
-type = cvode  # Backward Euler steady-state solver
-cvode_precon_method = user
+type = pvode  # PVODE has no physics (user) preconditioner
 
 mxstep = 50000
 
