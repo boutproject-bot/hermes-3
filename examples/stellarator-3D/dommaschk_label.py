@@ -43,17 +43,27 @@ def field():
     return zoidberg.field.DommaschkPotentials(C, R_0=R0, B_0=BTOR)
 
 
-def flux_surface_curves(fld, ycoords, r_start, n_points):
-    """Closed (R, Z) curve of the flux surface through (r_start, 0) in each
-    plane, from a Poincare trace (as in the grid scripts)."""
+def flux_surface_lines(fld, ycoords, r_start):
+    """Closed line of the flux surface through (r_start, 0) in each plane,
+    from a Poincare trace (as in ../dommaschk-3D/create_grid.py)."""
     rz, _ = trace_poincare(
         fld, r_start, 0.0, YPERIOD, y_slices=ycoords, revs=500, nplot=1, nover=20
     )
+    return [
+        zoidberg.rzline.line_from_points(rz[:, j, 0, 0], rz[:, j, 0, 1], spline_order=1)
+        for j in range(len(ycoords))
+    ]
+
+
+def flux_surface_curves(fld, ycoords, r_start, n_points, lines=None):
+    """Closed (R, Z) curve of the flux surface through (r_start, 0) in each
+    plane, with n_points equally spaced points. ``lines``: the result of
+    flux_surface_lines, if already computed."""
+    if lines is None:
+        lines = flux_surface_lines(fld, ycoords, r_start)
     curves = []
-    for j in range(len(ycoords)):
-        line = zoidberg.rzline.line_from_points(
-            rz[:, j, 0, 0], rz[:, j, 0, 1], spline_order=1
-        ).equallySpaced(n=n_points)
+    for line in lines:
+        line = line.equallySpaced(n=n_points)
         curves.append(np.column_stack((line.R, line.Z)))
     return curves
 
@@ -75,11 +85,13 @@ def distance_to_curve(points, curve):
 class FluxLabel:
     """s(R, Z, plane) for the NY planes of one field period."""
 
-    def __init__(self, n_points=N_CURVE):
+    def __init__(self, n_points=N_CURVE, lines=(None, None)):
+        """``lines``: flux_surface_lines of the inner and outer flux surface,
+        if already computed."""
         ycoords = np.linspace(0.0, YPERIOD, NY, endpoint=False)
         fld = field()
-        self.inner = flux_surface_curves(fld, ycoords, A1, n_points)
-        self.outer = flux_surface_curves(fld, ycoords, A2, n_points)
+        self.inner = flux_surface_curves(fld, ycoords, A1, n_points, lines[0])
+        self.outer = flux_surface_curves(fld, ycoords, A2, n_points, lines[1])
 
     def __call__(self, R, Z, plane):
         points = np.column_stack((np.ravel(R), np.ravel(Z)))

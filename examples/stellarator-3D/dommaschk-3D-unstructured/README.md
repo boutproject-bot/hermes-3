@@ -21,8 +21,9 @@ The script traces the two flux surfaces, meshes each cross-section with gmsh
 along x), traces the field lines from every node to the neighbouring planes and
 computes the interpolation and perpendicular-diffusion matrices. With 3 mm it
 gives 6845 nodes per plane (309 and 424 of them on the inner and outer flux
-surface), takes about 270 s, needs about 1.5 GB of memory at peak (both
-including the `k2_*` matrices, see below) and writes the 524 MB file
+surface), takes about 210 s on one process and about 90 s with
+`--processes 4`, needs about 1.5 GB of memory at peak (both including the
+`k2_*` matrices, see below) and writes the 524 MB file
 `dommaschk_unstructured_8_0.003.fci.nc`. It also writes the radial label
 `flux_label` used for the initial profile (see below).
 

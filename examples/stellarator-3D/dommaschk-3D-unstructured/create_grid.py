@@ -23,7 +23,6 @@ from pathlib import Path
 import numpy as np
 import zoidberg
 from scipy.spatial import KDTree
-from zoidberg.fieldtracer import trace_poincare
 from zoidberg.unstructured import (
     UnstructuredGrid,
     build_grid_data,
@@ -32,7 +31,7 @@ from zoidberg.unstructured import (
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from dommaschk_label import FluxLabel
+from dommaschk_label import FluxLabel, flux_surface_curves, flux_surface_lines
 
 # Field and domain: as in ../dommaschk-3D/create_grid.py
 C = np.zeros((6, 5, 4))
@@ -47,19 +46,14 @@ NY = 5 * 8 // SYMMETRY
 YPERIOD = 2.0 * np.pi / SYMMETRY
 
 
-def flux_surface_curves(field, ycoords, r_start, n_points=400):
-    """Closed (R, Z) curve of the flux surface through (r_start, 0) in each
-    plane, from a Poincare trace."""
-    rz, _ = trace_poincare(
-        field, r_start, 0.0, YPERIOD, y_slices=ycoords, revs=500, nplot=1, nover=20
+def surface_lines(r_start):
+    """Lines of the flux surface through (r_start, 0) in each plane, with the
+    example's field. A module-level function, so that it runs in worker
+    processes."""
+    field = zoidberg.field.DommaschkPotentials(C, R_0=R0, B_0=BTOR)
+    return flux_surface_lines(
+        field, np.linspace(0.0, YPERIOD, NY, endpoint=False), r_start
     )
-    curves = []
-    for j in range(len(ycoords)):
-        line = zoidberg.rzline.line_from_points(
-            rz[:, j, 0, 0], rz[:, j, 0, 1], spline_order=1
-        ).equallySpaced(n=n_points)
-        curves.append(np.column_stack((line.R, line.Z)))
-    return curves
 
 
 def radial_coordinate(pol):
@@ -95,8 +89,16 @@ def main():
     ycoords = np.linspace(0.0, YPERIOD, NY, endpoint=False)
 
     print("Tracing flux surfaces")
-    inner = flux_surface_curves(field, ycoords, A1)
-    outer = flux_surface_curves(field, ycoords, A2)
+    # The lines are shared by the meshing (400 points) and the flux label
+    if args.processes > 1:
+        from concurrent.futures import ProcessPoolExecutor
+
+        with ProcessPoolExecutor(max_workers=2) as ex:
+            lines = tuple(ex.map(surface_lines, (A1, A2)))
+    else:
+        lines = (surface_lines(A1), surface_lines(A2))
+    inner = flux_surface_curves(field, ycoords, A1, 400, lines[0])
+    outer = flux_surface_curves(field, ycoords, A2, 400, lines[1])
 
     print("Meshing the poloidal planes with gmsh")
     planes = gmsh_planes(outer, inner, mesh_size=args.mesh_size)
@@ -119,7 +121,7 @@ def main():
     data["xs"] = grid.to3d([radial_coordinate(p) for p in planes])
     # Common radial label of the structured and unstructured examples (the
     # initial profile): distances to the traced flux surfaces
-    label = FluxLabel()
+    label = FluxLabel(lines=lines)
     data["flux_label"] = grid.to3d(
         [label(p.dof[:, 0], p.dof[:, 1], j) for j, p in enumerate(planes)]
     )
