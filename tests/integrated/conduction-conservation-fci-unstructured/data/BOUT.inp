@@ -1,0 +1,42 @@
+# Energy conservation of parallel heat conduction on an unstructured FCI grid
+# with closed field lines (no parallel boundaries) and genuine interpolation
+# (sheared slab field). Electrons only, fixed density, pressure evolved by
+# Braginskii conduction: the total electron energy must stay constant.
+
+nout = 5
+timestep = 10
+
+[mesh]
+file = "../../../grids/fci_unstructured/US_closed/US_closed_16.fci.grid.nc"
+extrapolate_y = false
+
+[mesh:paralleltransform]
+type = fci
+
+[mesh:paralleltransform:xzinterpolation]
+type = precomputed
+
+[input:grid_variables]
+Z = field3d
+
+[solver]
+mxstep = 100000
+rtol = 1e-10
+atol = 1e-14
+
+[hermes]
+components = e, braginskii_collisions, braginskii_conduction
+
+Nnorm = 1e18
+Bnorm = 1
+Tnorm = 5
+
+[e]
+type = fixed_density, evolve_pressure
+charge = -1.0
+AA = 1.0 / 1836.0
+density = 1e18
+
+[Pe]
+# Varies along (y) and across (Z) the field lines
+function = 4 * (1 + 0.3 * sin(y) * cos(6.283185307179586 * gridvar:Z))

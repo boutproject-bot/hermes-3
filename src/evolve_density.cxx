@@ -153,6 +153,11 @@ EvolveDensity::EvolveDensity(std::string name, Options& alloptions, Solver* solv
           .doc("Apply neumann boundary with Z average?")
           .withDefault<bool>(false);
 
+  requireStructuredMesh("low_n_diffuse_perp", low_n_diffuse_perp);
+  requireStructuredMesh("low_p_diffuse_perp", low_p_diffuse_perp);
+  requireStructuredMesh("hyper_z", hyper_z > 0.);
+  requireStructuredMesh("neumann_boundary_average_z", neumann_boundary_average_z);
+
   std::vector<std::string> outputs = {"AA", "density", "density_source"};
   if (charge != 0.) {
     outputs.push_back("charge");

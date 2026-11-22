@@ -63,6 +63,7 @@ BraginskiiIonViscosity::BraginskiiIonViscosity(const std::string& name,
   perpendicular = options["perpendicular"]
                       .doc("Include perpendicular flow? (Requires phi)")
                       .withDefault<bool>(false);
+  requireStructuredMesh("braginskii_ion_viscosity:perpendicular", perpendicular);
 
   viscosity_collisions_mode =
       options["viscosity_collisions_mode"]

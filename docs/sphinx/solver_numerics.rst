@@ -395,6 +395,39 @@ The
       interpretation of two adjacent half-cells and can give noticeably
       different results when coefficients or cell sizes vary strongly.
 
+   ``PetscOperator``
+      Support-operator method using the PETSc matrices from the grid file
+      (FCI only). It is conservative by construction and has a discrete
+      energy estimate. It is the default on unstructured FCI grids whose
+      grid file has no ``k2_*`` matrices; ``Original`` is the default on
+      structured grids.
+
+      On irregular unstructured meshes its parallel divergence is not a
+      consistent discretisation: the operator error does not converge, and
+      the steady-state solution error converges only at order 0.6--1.4
+      (BOUT++ test ``MMS-spatial-fci-unstructured``). ``Original`` converges
+      at order 2.8--3.8 there but conserves energy only approximately.
+
+   ``PetscOperatorK2``
+      Flux-reconstructed conservative divergence (unstructured FCI only):
+      the support-operator gradient with a divergence that deposits the
+      heat flux of each field-line tube onto the next plane's cells using a
+      quadratic reconstruction of the flux inside the tube and the exact
+      overlaps of the tube with those cells. zoidberg writes the matrices
+      (``k2_forward_*``, ``k2_backward_*``) into unstructured grid files.
+      It is the default on unstructured FCI grids whose grid file has these
+      matrices.
+
+      It is exactly conservative and second order on irregular meshes with
+      centroid unknowns (the default of zoidberg's gmsh meshing). On meshes
+      whose unknowns sit at mesh nodes away from the dual-cell centroids it
+      is less accurate (order about 1.7). Unlike ``PetscOperator`` it has no
+      discrete energy estimate: in tests on irregular meshes no growing mode was
+      found on meshes with at least 32 cells per direction, but transient
+      energy growth up to a factor 1.6 is possible, and degenerate meshes
+      with only 2 cells across can be unstable. Use ``PetscOperator`` when a
+      guaranteed energy estimate matters more than accuracy.
+
 The selected values are reported at startup in the Hermes-3 log and are
 also recorded in the options tree as ``slope_limiter`` and
 ``conduction_method``.

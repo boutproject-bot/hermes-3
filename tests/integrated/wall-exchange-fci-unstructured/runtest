@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+
+# Wall-exchange accounting. With Dirichlet wall nodes, near-wall nodes
+# exchange parallel heat with the walls through their interpolation stencils.
+# The support-operator conduction conserves energy over all cells including
+# the wall nodes, so
+#
+#   (1) the conduction energy sources sum to zero over evolving and wall
+#       nodes (physical volume dV = dy * dagp_us_volume): the share at the
+#       wall nodes is exactly the heat taken from (or given to) the walls;
+#   (2) the change of the thermal energy of the evolving nodes equals the
+#       time integral of that exchange (nothing else changes it here), to
+#       2% of the largest cumulative exchange (trapezoidal rule).
+#
+# The size of the exchange relative to the conduction power is printed.
+
+import sys
+from pathlib import Path
+
+import netCDF4
+import numpy as np
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+
+shell("rm -f data/BOUT.dmp.*.nc")
+_, out = launch_safe("../../../hermes-3", nproc=1, pipe=True)
+Path("run.log").write_text(out)
+
+gridfile = "../../../grids/fci_unstructured/US_cyl_walls/US_cyl_walls_16.fci.grid.nc"
+with netCDF4.Dataset(gridfile) as grid:
+    mxg = int(grid["MXG"][...])
+    dV = (grid["dy"][:] * grid["dagp_us_volume"][:])[:, :, 0]
+    cell = grid["cell_number"][:, :, 0]
+nx = dV.shape[0]
+evolving = np.zeros(dV.shape, dtype=bool)
+evolving[mxg : nx - mxg] = True
+# Wall nodes: x guard cells holding a real node (the others are padding)
+wall = ~evolving & (cell >= 0)
+_, first = np.unique(cell[wall], return_index=True)
+wall_index = tuple(np.argwhere(wall)[first].T)
+
+
+def get(name):
+    return collect(name, path="data", info=False, xguards=True, yguards=False)[..., 0]
+
+
+t = collect("t_array", path="data", info=False)
+E = get("Ee_cond") + get("Eh+_cond")
+P = get("Pe") + get("Ph+")
+
+to_evolving = np.sum((E * dV)[:, evolving], axis=1)
+to_walls = np.sum(E[(slice(None),) + wall_index] * dV[wall_index], axis=1)
+scale = np.sum(np.abs(E * dV)[:, evolving], axis=1)
+closure = np.abs(to_evolving + to_walls) / scale
+W = 1.5 * np.sum((P * dV)[:, evolving], axis=1)
+# Cumulative: W(t) - W(0) against the trapezoidal integral of the exchange
+# (the first interval contains a fast initial transient)
+integral = np.concatenate(
+    ([0.0], np.cumsum(0.5 * (to_evolving[1:] + to_evolving[:-1]) * np.diff(t)))
+)
+balance = np.abs((W - W[0]) - integral) / np.max(np.abs(integral))
+
+print(f"Wall nodes: {len(wall_index[0])}, evolving nodes: {evolving.sum()}")
+for i in range(len(t)):
+    print(
+        f"output {i:2d}: heat to evolving nodes {to_evolving[i]:+.4e} "
+        f"(wall nodes {to_walls[i]:+.4e}), |conduction| {scale[i]:.4e}, "
+        f"closure {closure[i]:.1e}"
+    )
+print(f"Thermal energy of evolving nodes: {W[0]:.6e} -> {W[-1]:.6e}")
+print(
+    f"Exchange with the walls relative to the conduction power: "
+    f"{np.max(np.abs(to_evolving) / scale):.2e} (largest)"
+)
+print(
+    f"Largest closure error {np.max(closure):.1e}, energy balance error "
+    f"{np.max(balance):.1e}"
+)
+
+success = (
+    np.max(closure) < 1e-10
+    and np.max(balance) < 2e-2
+    and np.max(np.abs(to_evolving) / scale) > 1e-6  # the exchange is not trivially zero
+)
+if success:
+    print(" => Test passed")
+    sys.exit(0)
+print(" => Test failed")
+sys.exit(1)

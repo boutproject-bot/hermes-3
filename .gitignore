@@ -41,3 +41,22 @@ docker/docker-compose.override.yaml
 # Python-related directories
 *venv/
 dist/
+
+# Generated at run time by tests/integrated/unstructured_utils.py
+tests/integrated/*-fci-unstructured*/data/
+!tests/integrated/conduction-conservation-fci-unstructured/data/
+!tests/integrated/maximum-principle-fci-unstructured/data/
+!tests/integrated/unsupported-features-fci-unstructured/data/
+!tests/integrated/sheath-heat-balance-fci-unstructured/data/
+!tests/integrated/wall-exchange-fci-unstructured/data/
+!tests/integrated/reference-input-fci-unstructured/data/
+
+# Generated at run time by tests/integrated/1D-golden-answer-fci-unstructured/runtest
+tests/integrated/1D-golden-answer-fci-unstructured/balance*/
+
+# Generated at run time by tests/integrated/reference-input-fci-unstructured/runtest
+tests/integrated/reference-input-fci-unstructured/structured/
+tests/integrated/reference-input-fci-unstructured/unstructured/
+
+# Generated at run time by tests/integrated/solver-statistics-fci-unstructured/runtest
+tests/integrated/solver-statistics-fci-unstructured/structured/

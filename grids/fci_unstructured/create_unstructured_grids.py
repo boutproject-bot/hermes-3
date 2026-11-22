@@ -1,0 +1,280 @@
+#!/usr/bin/env python3
+"""Create the unstructured FCI grids used by the Hermes-3 tests.
+
+Each grid is the unstructured counterpart of a structured grid made by
+``grids/create_fci_grids.py``: same magnetic field, same domain, and
+poloidal planes that are triangle meshes stored "nodes along x" (nz = 1).
+See ``zoidberg.unstructured`` for the grid-file contract.
+
+    python create_unstructured_grids.py            # Hermes-3 test grids
+
+Existing files are kept unless ``-f`` is given. Every grid uses a fixed
+seed, so regenerating gives identical data (only the random grid_id
+attribute differs).
+"""
+
+import argparse
+import importlib.util
+import os
+import uuid
+from pathlib import Path
+
+import numpy as np
+from zoidberg.field import Slab
+from zoidberg.unstructured import (
+    UnstructuredPoloidalGrid,
+    gmsh_planes,
+    make_test_grid,
+    make_unstructured_grid,
+)
+
+
+class ThisField(Slab):
+    """Same field as ``ThisField`` in ``grids/create_fci_grids.py``.
+
+    Copied here because that script parses its arguments at import time.
+    """
+
+    def __init__(self, By, Byprime, xcentre, Bz=0.0):
+        self.By = By
+        self.Byprime = Byprime
+        self.xcentre = xcentre
+        self.Bz = Bz
+
+    def Bxfunc(self, x, z, phi):
+        return np.full(x.shape, 0.0)
+
+    def Bzfunc(self, x, z, phi):
+        return np.full(x.shape, self.Bz)
+
+    def Byfunc(self, x, z, phi):
+        return np.full(x.shape, self.By) + self.Byprime * np.sin(
+            (x - self.xcentre) * 2.0 * np.pi
+        )
+
+
+# Structured grids: RectangularPoloidalGrid(nx, nz, Lx=1, Lz=1, Rcentre=2)
+RSHIFT = 2.0
+LX = 1.0
+LZ = 1.0
+
+
+def field():
+    return ThisField(By=1.0, xcentre=RSHIFT, Byprime=-0.1)
+
+
+def z0(nz):
+    """Z of the first point of the structured grid with nz points, so that
+    BOUT++'s z = 2 pi (Z - z0) / Lz matches the structured grid."""
+    return -0.5 * LZ + 0.5 * LZ / nz
+
+
+def slab_y_poloidal():
+    """Counterpart of MMS_slab_y (nx = 6 with MXG = 2, nz = 4): 6 x 8 nodes
+    on R in [1.5, 2.5], periodic in Z. The field is straight, so every
+    parallel map is an injection."""
+    return UnstructuredPoloidalGrid.slab(
+        6,
+        8,
+        LX,
+        LZ,
+        R0=RSHIFT - 0.5 * LX,
+        Z0=z0(8),
+        jitter=0.2,
+        jitter_dirs="z",
+        periodic_R=False,
+        periodic_Z=True,
+        seed=100,
+    )
+
+
+def slab_bc_poloidal():
+    """Counterpart of slab_with_BC (4 x 4 interior cells): 5 x 4 nodes, the
+    smallest mesh that supports the order-4 parallel stencils (19 nodes).
+    The field is straight, so every node solves the same 1D problem; a small
+    mesh keeps the 256-plane golden-answer test fast."""
+    return UnstructuredPoloidalGrid.slab(
+        5,
+        4,
+        LX,
+        LZ,
+        R0=RSHIFT - 0.5 * LX,
+        Z0=z0(4),
+        jitter=0.2,
+        jitter_dirs="z",
+        periodic_R=False,
+        periodic_Z=True,
+        seed=100,
+    )
+
+
+def slab_xz_poloidal(n):
+    """Counterpart of MMS_slab_xz (n x n interior points): n x n nodes,
+    doubly periodic. The MMS solutions are periodic in x and z, and
+    ThisField is periodic in R with period Lx = 1."""
+    return UnstructuredPoloidalGrid.slab(
+        n,
+        n,
+        LX,
+        LZ,
+        R0=RSHIFT - 0.5 * LX,
+        Z0=z0(n),
+        jitter=0.2,
+        jitter_dirs="rz",
+        periodic_R=True,
+        periodic_Z=True,
+        seed=200 + n,
+    )
+
+
+def slab_xz_walls_poloidal(n):
+    """Counterpart of MMS_slab_xz with its Dirichlet x walls: n + 1 node
+    layers from R = 1.5 to 2.5 (nodes on both walls), periodic in Z. The wall
+    nodes become Dirichlet nodes (dirichlet_walls=True)."""
+    return UnstructuredPoloidalGrid.slab(
+        n + 1,
+        n,
+        LX,
+        LZ,
+        R0=RSHIFT - 0.5 * LX,
+        Z0=z0(n),
+        jitter=0.2,
+        jitter_dirs="rz",
+        periodic_R=False,
+        periodic_Z=True,
+        seed=300 + n,
+        r_on_walls=True,
+    )
+
+
+def annulus_poloidal(mesh_size):
+    """Annulus with two curved walls, meshed with gmsh: a perturbed ellipse
+    (R in [1.55, 2.49]) around an off-centre elliptic hole. The MMS solution
+    of 2D-density-anomalous-fci is defined everywhere, so the domain shape
+    is free; the wall nodes become Dirichlet nodes."""
+    th = np.linspace(0.0, 2.0 * np.pi, 200, endpoint=False)
+    outer = np.column_stack(
+        (RSHIFT + 0.45 * np.cos(th) + 0.04 * np.cos(3 * th), 0.38 * np.sin(th))
+    )
+    inner = np.column_stack(
+        (RSHIFT + 0.05 + 0.15 * np.cos(th), 0.02 + 0.12 * np.sin(th))
+    )
+    (plane,) = gmsh_planes([outer], [inner], mesh_size=mesh_size)
+    return plane
+
+
+def write(filename, force, build):
+    if filename.exists() and not force:
+        print(filename, "exists")
+        return
+    tmpname = filename.parent / f".{uuid.uuid4()}.nc"
+    build(str(tmpname))
+    os.replace(tmpname, filename)
+    print("Created", filename)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("-f", "--force", action="store_true", help="overwrite grids")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    args = parser.parse_args()
+
+    here = Path(__file__).resolve().parent
+
+    folder = here / "US_slab_y"
+    folder.mkdir(exist_ok=True)
+    for ny in (16, 32, 64):
+        write(
+            folder / f"US_slab_y_{ny}.fci.grid.nc",
+            args.force,
+            lambda fn, ny=ny: make_unstructured_grid(
+                fn, slab_y_poloidal(), field(), ny=ny, Ly=2.0 * np.pi
+            ),
+        )
+
+    folder = here / "US_slab_xz"
+    folder.mkdir(exist_ok=True)
+    for n in (16, 32):
+        write(
+            folder / f"US_slab_xz_{n}.fci.grid.nc",
+            args.force,
+            lambda fn, n=n: make_unstructured_grid(
+                fn, slab_xz_poloidal(n), field(), ny=1, Ly=2.0 * np.pi
+            ),
+        )
+
+    folder = here / "US_slab_xz_walls"
+    folder.mkdir(exist_ok=True)
+    for n in (16, 32):
+        write(
+            folder / f"US_slab_xz_walls_{n}.fci.grid.nc",
+            args.force,
+            lambda fn, n=n: make_unstructured_grid(
+                fn,
+                slab_xz_walls_poloidal(n),
+                field(),
+                ny=1,
+                Ly=2.0 * np.pi,
+                dirichlet_walls=True,
+            ),
+        )
+
+    folder = here / "US_slab_with_BC"
+    folder.mkdir(exist_ok=True)
+    for ny in (256,):
+        write(
+            folder / f"US_slab_with_BC_{ny}.fci.grid.nc",
+            args.force,
+            lambda fn, ny=ny: make_unstructured_grid(
+                fn, slab_bc_poloidal(), field(), ny=ny, Ly=100.0, walls_y=True
+            ),
+        )
+
+    folder = here / "US_closed"
+    folder.mkdir(exist_ok=True)
+    # Closed field lines (sheared Slab, no wall hits) with genuine
+    # interpolation: the BOUT-dev MMS strip, used for conservation tests
+    write(
+        folder / "US_closed_16.fci.grid.nc",
+        args.force,
+        lambda fn: make_test_grid("bout_mms", 16, filename=fn),
+    )
+
+    folder = here / "US_cyl_walls"
+    folder.mkdir(exist_ok=True)
+    # Cylindrical annulus with a sheared field (field lines move in Z and
+    # the maps interpolate) and Dirichlet walls in R: near-wall nodes
+    # exchange parallel heat with the wall nodes through their
+    # interpolation stencils (wall-exchange accounting test)
+    write(
+        folder / "US_cyl_walls_16.fci.grid.nc",
+        args.force,
+        lambda fn: make_test_grid(
+            "bout_mms_cyl_sheared", 16, filename=fn, dirichlet_walls=True
+        ),
+    )
+
+    folder = here / "US_annulus"
+    if importlib.util.find_spec("gmsh") is None:
+        print("gmsh not found: skipping", folder.name)
+    else:
+        folder.mkdir(exist_ok=True)
+        for n in (16, 32):
+            write(
+                folder / f"US_annulus_{n}.fci.grid.nc",
+                args.force,
+                lambda fn, n=n: make_unstructured_grid(
+                    fn,
+                    annulus_poloidal(1.0 / n),
+                    field(),
+                    ny=1,
+                    Ly=2.0 * np.pi,
+                    dirichlet_walls=True,
+                ),
+            )
+
+    print("Finished creating unstructured grids")
+
+
+if __name__ == "__main__":
+    main()

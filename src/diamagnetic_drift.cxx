@@ -1,3 +1,4 @@
+#include "../include/hermes_utils.hxx"
 #include <bout/derivs.hxx>
 #include <bout/difops.hxx>
 #include <bout/fv_ops.hxx>
@@ -11,6 +12,7 @@ DiamagneticDrift::DiamagneticDrift(std::string name, Options& alloptions,
                                    Solver* UNUSED(solver))
     : NamedComponent(name, {readIfSet("species:{all_species}:{input}"),
                             readWrite("species:{all_species}:{output}")}) {
+  requireStructuredMesh("Component diamagnetic_drift");
 
   // Get options for this component
   auto& options = alloptions[name];

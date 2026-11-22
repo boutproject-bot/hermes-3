@@ -102,3 +102,54 @@ be normalised, and the ``normalise_metric`` option is not used.
 The default BOUT++ behavior is to throw an exception if an option is
 set but not used.
 
+Unstructured FCI grids
+~~~~~~~~~~~~~~~~~~~~~~
+
+On unstructured FCI grids each poloidal plane is a triangle mesh, made
+independently with ``zoidberg.unstructured`` (see the example
+``examples/stellarator-3D/dommaschk-3D-unstructured``). The nodes of a plane
+are stored along x and ``nz = 1``; Dirichlet wall nodes, if the grid has
+them, are stored in the x guard cells. The parallel interpolation weights
+come from the grid file:
+
+.. code-block:: ini
+
+   [mesh:paralleltransform:xzinterpolation]
+   type = precomputed
+
+The index coordinates ``x`` and ``z`` are not geometric (an input expression
+that uses them gives a warning), so input expressions use grid variables
+instead, e.g. ``gridvar:R``, ``gridvar:Z`` or ``gridvar:flux_label``, declared
+in ``[input:grid_variables]`` (``R = field3d``). On grids with wall nodes,
+every field whose x boundary is read from the input (e.g. ``Nh+``, ``Ph+``,
+``Pe``, ``Vh+``) needs ``bndry_xin`` and ``bndry_xout`` set to
+``dirichlet_node(value)``; other x boundary conditions stop with an error.
+``sheath_boundary_fci`` applies the sheath where field lines leave through
+the outer x boundary (``mesh:outer_x = true``, the default); set
+``mesh:inner_x = true`` for sheaths where they leave through the inner wall.
+
+Parallel heat conduction uses ``conduction_method = petscoperatork2`` by
+default if the grid file has its ``k2_*`` matrices, otherwise
+``petscoperator``; ``original`` can still be selected (see
+:ref:`sec-slope-limiter-settings`). The diagnostics ``E<species>_cond``
+(with ``<species>:diagnose = true``) and ``E<species>_sheath`` (with
+``sheath_boundary_fci:diagnose = true``) give the conduction and sheath
+energy sources.
+
+Components and options that use structured index-space stencils, boundary
+loops or Laplacian inversions stop with an error on unstructured grids: the
+components ``vorticity``, ``relax_potential``, ``electromagnetic``,
+``polarisation_drift``, ``diamagnetic_drift``, ``classical_diffusion`` and
+``neutral_mixed``; the species options ``low_n_diffuse_perp``,
+``low_p_diffuse_perp``, ``low_T_diffuse_perp``, ``hyper_z`` and
+``hyper_z_T``; ``neumann_boundary_average_z`` (in the ``N<species>``,
+``P<species>`` or ``E<species>`` sections);
+``braginskii_ion_viscosity:perpendicular``; and the recycling options
+``sol_recycle``, ``pfr_recycle``, ``neutral_pump`` and ``target_recycle``.
+Jacobian colouring (e.g. ``solver:type = beuler`` with
+``solver:use_coloring = true``) is not supported either. ExB advection is
+not implemented: it gives a warning, the X-Z flow is zero and
+``poloidal_flows = true`` fails.
+
+**Note** The top-level option ``use_petsc_operator = true`` was removed; set
+the top-level option ``conduction_method = petscoperator`` instead.

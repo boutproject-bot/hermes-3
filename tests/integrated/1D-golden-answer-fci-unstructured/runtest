@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+
+# Python script to run and analyse MMS test
+#
+# Unstructured-mesh counterpart of ../1D-golden-answer-fci: same input
+# (generated from ../1D-golden-answer-fci/data/BOUT.inp by
+# unstructured_utils.py), same golden values and tolerance. There is no
+# perpendicular transport, so every node must reproduce the 1D profile with
+# sheath boundaries at both y ends.
+
+import shutil
+import sys
+from pathlib import Path
+
+import netCDF4
+import numpy as np
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+from numpy import abs
+
+this_dir = Path(__file__).resolve().parent
+sys.path.append(str(this_dir.parent))
+from unstructured_utils import make_unstructured_input
+
+make_unstructured_input(
+    "1D-golden-answer-fci",
+    xu="gridvar:R - 1.5",
+    zu="6.28318530717959*(gridvar:Z + 0.5)",
+    here=this_dir,
+)
+
+gridfile = (
+    "../../../grids/fci_unstructured/US_slab_with_BC/US_slab_with_BC_256.fci.grid.nc"
+)
+
+
+nout = 10
+timestep = 1e4 / nout
+
+nproc = 1
+
+
+args = f"mesh:file={gridfile} nout={nout} timestep={timestep}"
+
+print("Running with " + args)
+
+# Delete old data
+shell("rm data/BOUT.dmp.*.nc")
+
+# Command to run
+cmd = "../../../hermes-3 " + args
+# Launch using MPI
+_, out = launch_safe(cmd, nproc=nproc, pipe=True)
+
+
+success = True
+
+
+# Average over the interior nodes (x guard cells are padding)
+Pi = np.mean(
+    collect("Ph+", tind=[nout, nout], path="data", info=False)[-1][1:-1], axis=(0, 2)
+)
+Pe = np.mean(
+    collect("Pe", tind=[nout, nout], path="data", info=False)[-1][1:-1], axis=(0, 2)
+)
+Ni = np.mean(
+    collect("Nh+", tind=[nout, nout], path="data", info=False)[-1][1:-1], axis=(0, 2)
+)
+
+tol = 1e-4
+
+for var, lab in zip([Pe, Pi, Ni], ["Pe", "Pi", "Ni"]):
+    if abs(var[0] - var[-1]) > tol:
+        print(f"Asymmetry in {lab}!", var[0], var[-1])
+        success = False
+
+    print(f"{lab}: ", var[0])
+
+
+# Golden values: read from the structured test, so that both tests always use
+# the same values (they are updated there when the operators change)
+golden = {}
+for line in (
+    (this_dir.parent / "1D-golden-answer-fci" / "runtest").read_text().splitlines()
+):
+    name, _, value = line.partition("=")
+    if name.strip() in ("Nival", "Pival", "Peval") and value.strip():
+        golden[name.strip()] = float(value)
+Nival, Pival, Peval = golden["Nival"], golden["Pival"], golden["Peval"]
+
+if abs(Ni[0] - Nival) > tol:
+    print("Density mismatch. ", abs(Ni[0] - Nival))
+    success = False
+
+if abs(Pi[0] - Pival) > tol:
+    print("Pi mismatch. ", abs(Pi[0] - Pival))
+    success = False
+
+if abs(Pe[0] - Peval) > tol:
+    print("Pe mismatch. ", abs(Pe[0] - Peval))
+    success = False
+
+
+# Physics checks of ../1D-golden-answer-fci, copied unchanged:
+# Physics checks, in separate runs so that the golden run above is
+# unchanged. The sheath fluxes are rebuilt from the cell values with the
+# formulas of sheath_boundary_fci (limitFree extrapolation, mode 1, and the
+# smoothed Bohm speed), and the saved ddt() fields give instantaneous
+# balances at every output time:
+#   particles:      sum ddt(N) dV = sum S_N dV - wall particle flux
+#   thermal energy: sum 3/2 ddt(P) dV = sum 3/2 S_P dV - 5/2 wall flux of P
+#                   + sum V Grad_par(P) dV   (per species, p_div_v = false)
+# S_P contains the sheath energy sinks and conduction (no boundary flux).
+# The wall Mach number is compared with a reference run with a sharp Bohm
+# condition max(|V|, C) (bohm_smoothing = 0), which measures the bias of the
+# smoothed condition. The dissipative = true variant must close the
+# same balances (the Lax term is switched off at sheath faces).
+BOHM_SMOOTHING = np.sqrt(0.1)  # sheath_boundary_fci default
+
+
+def limit_free(fm, fc):
+    return np.where(fm < 1e-10, fc, fc**2 / fm)
+
+
+def bohm_speed(c, u, smoothing):
+    return 0.5 * (c + u + np.sqrt((c - u) ** 2 + (smoothing * c) ** 2))
+
+
+def check_case(name, options, smoothing):
+    path = Path(name)
+    path.mkdir(exist_ok=True)
+    shutil.copy("data/BOUT.inp", path / "BOUT.inp")
+    shell(f"rm -f {name}/BOUT.dmp.*.nc")
+    cmd = (
+        f"../../../hermes-3 -d {name} {args} sheath_boundary_fci:diagnose=true "
+        f"h+:diagnose=true e:diagnose=true {options}"
+    )
+    status, out = launch_safe(cmd, nproc=nproc, pipe=True)
+    (path / "run.log").write_text(out)
+    if status:
+        print(f"{name}: run failed\n{out}")
+        return False, None
+
+    def get(var):
+        return collect(var, path=name, info=False, xguards=False, yguards=False)
+
+    with netCDF4.Dataset(path / "BOUT.dmp.0.nc") as d:
+        mxg, myg = int(d["MXG"][...]), int(d["MYG"][...])
+        geo = {
+            v: np.asarray(d[v][:])[mxg:-mxg, myg:-myg, :]
+            for v in ("J", "dx", "dy", "dz", "g_22")
+        }
+    dV = geo["J"] * geo["dx"] * geo["dy"] * geo["dz"]
+    area = geo["J"] * geo["dx"] * geo["dz"] / np.sqrt(geo["g_22"])
+
+    def total(f):
+        return np.sum(f * dV, axis=(1, 2, 3))
+
+    N, Pi, Pe, V = get("Nh+"), get("Ph+"), get("Pe"), get("Vh+")
+    Ti, Te = Pi / N, Pe / N
+    particle_flux = 0.0
+    pressure_flux = {"h+": 0.0, "e": 0.0}
+    mach = []
+    for c, m in (
+        (-1, -2),
+        (0, 1),
+    ):  # upper and lower wall: boundary cell, its neighbour
+
+        def face(f, c=c, m=m):
+            return 0.5 * (f[:, :, c] + limit_free(f[:, :, m], f[:, :, c]))
+
+        sound = np.sqrt(face(Ti) + face(Te))
+        v_sheath = bohm_speed(sound, abs(V[:, :, c]), smoothing)
+        A = area[None, :, c]
+        particle_flux = particle_flux + np.sum(face(N) * v_sheath * A, axis=(1, 2))
+        # Zero current: the electron sheath velocity equals the ion one
+        pressure_flux["h+"] = pressure_flux["h+"] + np.sum(
+            face(Pi) * v_sheath * A, axis=(1, 2)
+        )
+        pressure_flux["e"] = pressure_flux["e"] + np.sum(
+            face(Pe) * v_sheath * A, axis=(1, 2)
+        )
+        mach.append(float((v_sheath / sound)[-1].mean()))
+
+    errors = {}
+    source = total(get("SNh+"))
+    errors["particles"] = (total(get("ddt(Nh+)")) - (source - particle_flux)) / source
+    for sp in ("h+", "e"):
+        lhs = 1.5 * total(get(f"ddt(P{sp})"))
+        src = 1.5 * total(get(f"SP{sp}"))
+        rhs = src - 2.5 * pressure_flux[sp] + total(get(f"E{sp}_VgradP"))
+        errors[f"thermal energy {sp}"] = (lhs - rhs) / abs(src)
+
+    ok = True
+    for key, err in errors.items():
+        worst = np.max(abs(err[1:]))  # t = 0: no RHS evaluated yet
+        print(f"{name}: {key} balance, largest relative error {worst:.2e}")
+        if worst > 1e-10:
+            print(f"{name}: {key} balance not closed")
+            ok = False
+    print(
+        f"{name}: sheath-face Mach number (upper, lower wall) {mach[0]:.4f}, {mach[1]:.4f}"
+    )
+    if min(mach) < 1.0 - 1e-12 or abs(mach[0] - mach[1]) > 1e-4:
+        print(f"{name}: Bohm condition violated or asymmetric")
+        ok = False
+    return ok, mach
+
+
+ok_default, mach_default = check_case("balance", "", BOHM_SMOOTHING)
+ok_sharp, mach_sharp = check_case(
+    "balance_sharp_bohm", "sheath_boundary_fci:bohm_smoothing=0", 0.0
+)
+ok_diss, _ = check_case(
+    "balance_dissipative", "h+:dissipative=true e:dissipative=true", BOHM_SMOOTHING
+)
+success = success and ok_default and ok_sharp and ok_diss
+if ok_default and ok_sharp:
+    bias = mach_default[0] / mach_sharp[0] - 1
+    # Recorded size of the bias: +13.4 %; fails only if it grows
+    print(f"Wall Mach number, smoothed / sharp Bohm condition: {bias * 100:+.1f} %")
+    if bias > 0.2:
+        print("Bias of the smoothed Bohm condition larger than 20 %")
+        success = False
+
+if success:
+    print(" => Test passed")
+    sys.exit(0)
+else:
+    print(" => Test failed")
+    sys.exit(1)
