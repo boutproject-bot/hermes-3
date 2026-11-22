@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+
+# The reference electron-ion transport input (data/BOUT.inp) on a slab whose
+# field lines leave through the walls in R (constant radial field B_R = 0.4,
+# B_y = 1, walls at R = 1.5 and 2.5 m, Z and y periodic), on matching
+# structured and unstructured grids. Every field line ends on both walls, so
+# the sheath acts at parallel boundary points inside the poloidal planes.
+#
+# The unstructured grid keeps the Dirichlet wall nodes out of the parallel
+# maps (map_walls=False) and treats end points next to a wall as wall hits
+# (near_wall_hits=True), so that heat carried along the field lines leaves
+# through the walls only via the sheath. The structured run uses
+# conduction_method = petscoperator (with the default method the structured
+# run stalls in this geometry).
+#
+# Both runs must reach the end time and agree in the volume averages of
+# Nh+, Ph+ and Pe, in the particle loss since t = 0 and in the radial
+# profiles of Nh+ and Pe (bins in R, averaged over Z and y). The energy
+# losses since t = 0 and the sheath heat sinks are printed but not checked:
+# the unstructured grid has fewer sheath boundary points next to the walls
+# (end points nearer a wall node than a plasma node) than the structured
+# one (end points beyond the last cell centre), so its electron sheath sink
+# is about 40 % smaller.
+
+import sys
+import uuid
+from pathlib import Path
+
+import netCDF4
+import numpy as np
+import zoidberg
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+from zoidberg.field import Slab
+from zoidberg.unstructured import UnstructuredPoloidalGrid, make_unstructured_grid
+
+RC, LX, LZ, LY = 2.0, 1.0, 1.0, 2.0 * np.pi
+NX, NY, NZ = 16, 32, 8
+GRID_S = "wall_hits_structured.fci.nc"
+GRID_U = "wall_hits_unstructured.fci.nc"
+WALL_VALUES = {"Nh+": 0.1, "NVh+": 0.0, "Vh+": 0.0, "Ph+": 0.01, "Pe": 0.01}
+
+
+class Tilted(Slab):
+    def __init__(self):
+        super().__init__(By=1.0, Bz=0.05, xcentre=RC, Bzprime=0.0)
+
+    def Bxfunc(self, x, z, phi):
+        return np.full(np.shape(x), 0.4)
+
+
+def make_structured():
+    planes = [
+        zoidberg.poloidal_grid.RectangularPoloidalGrid(NX + 4, NZ, LX, LZ, Rcentre=RC)
+        for _ in range(NY)
+    ]
+    grid = zoidberg.grid.Grid(
+        planes, np.linspace(0, LY, NY, endpoint=False), LY, yperiodic=True
+    )
+    maps = zoidberg.make_maps(grid, Tilted(), nslice=1)
+    zoidberg.weights.modify_maps(maps, partial_boundaries=False)
+    tmp = str(uuid.uuid4())
+    with zoidberg.zoidberg.MapWriter(tmp) as writer:
+        writer.add_grid_field(grid, Tilted())
+        writer.add_maps(maps)
+        writer.add_dagp()
+    Path(tmp).replace(GRID_S)
+
+
+def make_unstructured():
+    pol = UnstructuredPoloidalGrid.slab(
+        NX + 1,
+        NZ,
+        LX,
+        LZ,
+        R0=RC - 0.5 * LX,
+        Z0=-0.5 * LZ + 0.5 * LZ / NZ,
+        jitter=0.2,
+        jitter_dirs="z",
+        periodic_R=False,
+        periodic_Z=True,
+        seed=400 + NX,
+        r_on_walls=True,
+    )
+    pol.walls = (
+        np.flatnonzero(np.isclose(pol.R, RC - 0.5 * LX)),
+        np.flatnonzero(np.isclose(pol.R, RC + 0.5 * LX)),
+    )
+    pol.use_centroid_dofs()
+    make_unstructured_grid(
+        GRID_U,
+        pol,
+        Tilted(),
+        ny=NY,
+        Ly=LY,
+        dirichlet_walls=True,
+        map_walls=False,
+        near_wall_hits=True,
+    )
+
+
+def run(name, options):
+    path = Path(name)
+    path.mkdir(exist_ok=True)
+    path.joinpath("BOUT.inp").write_text(Path("data/BOUT.inp").read_text())
+    shell(f"rm -f {name}/BOUT.dmp.*.nc")
+    cmd = (
+        f"../../../hermes-3 -d {name} h+:diagnose=true e:diagnose=true "
+        f"sheath_boundary_fci:diagnose=true {options}"
+    )
+    status, out = launch_safe(cmd, nproc=1, pipe=True)
+    path.joinpath("run.log").write_text(out)
+    if status:
+        print(f"{name}: run failed\n{out}")
+    return status == 0
+
+
+def summary(path, unstructured):
+    """Volume averages, losses since t = 0, sheath sinks and radial profiles"""
+
+    def get(var, **kw):
+        return np.asarray(
+            collect(
+                var, path=path, info=False, yguards=False, xguards=unstructured, **kw
+            )
+        )
+
+    if unstructured:
+        with netCDF4.Dataset(GRID_U) as g:
+            mxg = int(g["MXG"][...])
+            cell = np.asarray(g["cell_number"][:, :, 0])
+            dV = np.asarray(g["dy"][:] * g["dagp_us_volume"][:])[:, :, 0]
+            R = np.asarray(g["R"][:])[:, :, 0]
+        # The wall nodes count with their (Dirichlet) values, so that both
+        # grids average over the same volume
+        evolving = np.zeros(cell.shape, bool)
+        evolving[mxg:-mxg] = True
+        evolving &= cell >= 0
+
+        def cells(f):
+            return f[..., 0]
+
+    else:
+        with netCDF4.Dataset(GRID_S) as g:
+            mxg = int(g["MXG"][...])
+            R = np.asarray(g["R"][:])[mxg:-mxg].ravel()
+        dV = np.prod([get(v) for v in ("J", "dx", "dy", "dz")], axis=0)
+        R = R.reshape(dV.shape)
+        evolving = np.ones(dV.shape, bool)
+
+        def cells(f):
+            return f
+
+    def average(f, mask=None):
+        f, w = cells(f), dV if mask is None else np.where(mask, dV, 0.0)
+        return np.sum(f * w, axis=tuple(range(f.ndim - w.ndim, f.ndim))) / dV.sum()
+
+    edges = np.linspace(RC - 0.5 * LX, RC + 0.5 * LX, 9)
+    volume = np.histogram(R[evolving], edges, weights=dV[evolving])[0]
+    result = {"t": float(get("t_array")[-1])}
+    for var in ("Nh+", "Ph+", "Pe"):
+        f = get(var)
+        result[var] = average(f)[-1]
+        result[f"loss {var}"] = average(f)[0] - average(f)[-1]
+        result[f"profile {var}"] = (
+            np.histogram(R[evolving], edges, weights=(cells(f[-1]) * dV)[evolving])[0]
+            / volume
+        )
+    for var in ("Ee_sheath", "Eh+_sheath"):
+        result[var] = average(get(var)[-1], evolving)
+    return result
+
+
+# Thresholds: about twice the measured differences (volume averages
+# below 0.001, 0.025, 0.028; particle loss 0.020; profiles 0.025, 0.048).
+# Without the two zoidberg options the Pe profiles differ by 0.21.
+AVERAGE_TOL = 0.06
+LOSS_TOL = 0.05
+PROFILE_TOL = 0.1
+
+make_structured()
+make_unstructured()
+
+ok = run("structured", "conduction_method=petscoperator")
+wall = " ".join(
+    f"'{var}:bndry_xin=dirichlet_node({value})' '{var}:bndry_xout=dirichlet_node({value})'"
+    for var, value in WALL_VALUES.items()
+)
+ok = (
+    run(
+        "unstructured",
+        f"mesh:file={GRID_U} mesh:paralleltransform:xzinterpolation:type=precomputed "
+        + wall,
+    )
+    and ok
+)
+if not ok:
+    print(" => Test failed")
+    sys.exit(1)
+
+s, u = summary("structured", False), summary("unstructured", True)
+for name, case in (("structured", s), ("unstructured", u)):
+    if abs(case["t"] - 100.0) > 1e-6:
+        print(f"{name}: stopped at t = {case['t']}")
+        ok = False
+checks = [(var, AVERAGE_TOL) for var in ("Nh+", "Ph+", "Pe")]
+checks += [("loss Nh+", LOSS_TOL), ("loss Ph+", None), ("loss Pe", None)]
+checks += [("Eh+_sheath", None), ("Ee_sheath", None)]
+for key, tol in checks:
+    diff = abs(u[key] - s[key]) / abs(s[key])
+    print(
+        f"{key}: structured {s[key]:.4e}, unstructured {u[key]:.4e}, relative difference {diff:.3f}"
+        + ("" if tol else " (not checked)")
+    )
+    ok = ok and (tol is None or diff <= tol)
+for var in ("Nh+", "Pe"):
+    ps, pu = s[f"profile {var}"], u[f"profile {var}"]
+    diff = np.max(abs(pu - ps)) / (ps.max() - ps.min())
+    print(f"{var}: radial profiles differ by {diff:.3f} of the radial variation")
+    ok = ok and diff <= PROFILE_TOL
+
+if ok:
+    print(" => Test passed")
+    sys.exit(0)
+print(" => Test failed")
+sys.exit(1)

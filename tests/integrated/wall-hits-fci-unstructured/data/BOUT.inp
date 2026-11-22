@@ -1,0 +1,103 @@
+# Reference electron-ion transport input on a slab whose field lines leave
+# through the walls in R (constant radial field): sheaths on both walls
+# (mesh:inner_x = true). The runtest runs it on matching structured and
+# unstructured grids.
+
+nout = 10
+timestep = 10
+
+[mesh:paralleltransform]
+type = fci
+
+[mesh]
+file = "wall_hits_structured.fci.nc"
+# Sheaths where field lines leave through the inner and the outer wall
+inner_x = true
+
+[input:grid_variables]
+R = field3d
+
+[solver]
+mxstep = 10000
+type = pvode
+rtol = 1e-5
+atol = 1e-8
+
+[hermes]
+components = (h+, e, sound_speed, braginskii_collisions, braginskii_friction,
+              braginskii_heat_exchange, sheath_boundary_fci, braginskii_ion_viscosity,
+              braginskii_conduction)
+
+Nnorm = 1e19  # Reference density [m^-3]
+Bnorm = 1     # Reference magnetic field [T]
+Tnorm = 50    # Reference temperature [eV]
+
+[braginskii_collisions]
+electron_ion = true
+neutral_neutral = false
+ion_neutral = false
+electron_neutral = false
+
+[sheath_boundary_fci]
+gamma_e = 6.5
+gamma_i = 4.5
+
+[sound_speed]
+electron_dynamics = false
+
+################################################################
+# Ions
+
+[h+]
+type = evolve_density, evolve_momentum, evolve_pressure, anomalous_diffusion
+p_div_v = true
+
+AA = 1
+charge = 1
+thermal_conduction = true
+anomalous_D = 10    # [m^2/s]
+anomalous_chi = 10  # [m^2/s]
+
+[Vh+]
+bndry_xin = dirichlet(0.0)
+bndry_xout = dirichlet(0.0)
+
+[Nh+]
+bndry_xin = dirichlet(0.1)
+bndry_xout = dirichlet(0.1)
+function = 0.1 + 0.9 * exp(-((gridvar:R - 2) / 0.2)^2)
+
+flux = 1e22
+# Source centred on R = 2 m (width 0.15 m)
+source = flux * exp(-((gridvar:R - 2) / 0.15)^2) / 50
+
+[NVh+]
+bndry_xin = dirichlet(0.0)
+bndry_xout = dirichlet(0.0)
+function = 0.0
+
+[Ph+]
+bndry_xin = dirichlet(0.01)
+bndry_xout = dirichlet(0.01)
+function = 0.01 + 0.99 * exp(-((gridvar:R - 2) / 0.2)^2)
+
+heating = 1e5
+T_source = heating / (`Nh+`:flux * 1.602e-19 * 1.5)
+source =  `Nh+`:source * T_source * 1.602176634e-19
+
+################################################################
+# Electrons
+
+[e]
+type = quasineutral, zero_current, evolve_pressure
+
+AA = 1.0 / 1836.0
+charge = -1
+thermal_conduction = true
+
+[Pe]
+bndry_xin = dirichlet(0.01)
+bndry_xout = dirichlet(0.01)
+function = 0.01 + 0.99 * exp(-((gridvar:R - 2) / 0.2)^2)
+
+source = `Ph+`:source

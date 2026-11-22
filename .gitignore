@@ -50,6 +50,7 @@ tests/integrated/*-fci-unstructured*/data/
 !tests/integrated/sheath-heat-balance-fci-unstructured/data/
 !tests/integrated/wall-exchange-fci-unstructured/data/
 !tests/integrated/reference-input-fci-unstructured/data/
+!tests/integrated/wall-hits-fci-unstructured/data/
 
 # Generated at run time by tests/integrated/1D-golden-answer-fci{,-unstructured}/runtest
 tests/integrated/1D-golden-answer-fci/balance*/
@@ -58,6 +59,10 @@ tests/integrated/1D-golden-answer-fci-unstructured/balance*/
 # Generated at run time by tests/integrated/reference-input-fci-unstructured/runtest
 tests/integrated/reference-input-fci-unstructured/structured/
 tests/integrated/reference-input-fci-unstructured/unstructured/
+
+# Generated at run time by tests/integrated/wall-hits-fci-unstructured/runtest
+tests/integrated/wall-hits-fci-unstructured/structured/
+tests/integrated/wall-hits-fci-unstructured/unstructured/
 
 # Generated at run time by tests/integrated/solver-statistics-fci-unstructured/runtest
 tests/integrated/solver-statistics-fci-unstructured/structured/
