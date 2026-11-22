@@ -317,11 +317,37 @@ if(HERMES_TESTS)
   #   `CONFLICTS` to negate the variable, rather than `NOT VARIABLE`)
   #
   # * CONFLICTS: list of variables that must be false to enable test
+  find_package(Git QUIET) # to check that test inputs are tracked
   function(hermes_add_integrated_test TESTNAME)
+    # GENERATES_INPUT: the runtest writes data/BOUT.inp itself. NO_INPUT: the
+    # test has no data/BOUT.inp (e.g. it runs other directories).
+    set(options GENERATES_INPUT NO_INPUT)
     set(oneValueArgs DOWNLOAD DOWNLOAD_NAME TEST_EXECUTABLE)
     set(multiValueArgs REQUIRES CONFLICTS)
     cmake_parse_arguments(HERMES_TEST_OPTIONS "${options}" "${oneValueArgs}"
                           "${multiValueArgs}" ${ARGN})
+
+    # Every other test needs a data/BOUT.inp tracked by git: an untracked
+    # local copy would let the test pass here and fail in a fresh clone.
+    if(NOT HERMES_TEST_OPTIONS_GENERATES_INPUT
+       AND NOT HERMES_TEST_OPTIONS_NO_INPUT)
+      set(_input tests/integrated/${TESTNAME}/data/BOUT.inp)
+      if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${_input})
+        message(FATAL_ERROR "Test ${TESTNAME} has no ${_input}. Add it, or "
+                            "register the test with GENERATES_INPUT or NO_INPUT")
+      endif()
+      if(GIT_FOUND AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/.git)
+        execute_process(
+          COMMAND ${GIT_EXECUTABLE} ls-files --error-unmatch ${_input}
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+          RESULT_VARIABLE _untracked
+          OUTPUT_QUIET ERROR_QUIET)
+        if(_untracked)
+          message(FATAL_ERROR "Test ${TESTNAME}: ${_input} is not tracked by "
+                              "git (check .gitignore)")
+        endif()
+      endif()
+    endif()
 
     foreach(REQUIREMENT IN LISTS HERMES_TEST_OPTIONS_REQUIRES)
       if(NOT ${REQUIREMENT})
@@ -419,7 +445,7 @@ if(HERMES_TESTS)
   hermes_add_integrated_test(2D-production CONFLICTS BOUT_USE_METRIC_3D)
   hermes_add_integrated_test(2D-energy CONFLICTS BOUT_USE_METRIC_3D)
   hermes_add_integrated_test(2D-recycling CONFLICTS BOUT_USE_METRIC_3D)
-  hermes_add_integrated_test(examples CONFLICTS BOUT_USE_METRIC_3D)
+  hermes_add_integrated_test(examples NO_INPUT CONFLICTS BOUT_USE_METRIC_3D)
   hermes_add_integrated_test(component-order CONFLICTS BOUT_USE_METRIC_3D)
   hermes_add_integrated_test(1D-selflimiting-source)
   hermes_add_integrated_test(1D-density-fci REQUIRES BOUT_USE_METRIC_3D)
