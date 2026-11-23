@@ -15,12 +15,14 @@ from boututils.run_wrapper import launch, shell
 GUARD = "is not supported on unstructured FCI grids"
 COLOURING = "Jacobian colouring is not supported on unstructured meshes"
 INDEX_COORDINATE = "uses the index coordinate x or z on an unstructured mesh"
+# Only in the error, not in the warning
+INDEX_ERROR = "or set input:allow_index_coordinates = true"
 WALL_NODES = "stores Dirichlet wall nodes in the x guard cells"
 
 # (name, command-line options, expect failure, expected text)
 CASES = [
     ("base input", "", False, None),
-    ("index coordinate x", "'Nh+:function=1+0.1*x'", True, INDEX_COORDINATE),
+    ("index coordinate x", "'Nh+:function=1+0.1*x'", True, INDEX_ERROR),
     (
         "index coordinate x, allowed",
         "'Nh+:function=1+0.1*x' input:allow_index_coordinates=true",
