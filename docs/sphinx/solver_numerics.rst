@@ -414,7 +414,9 @@ The
       heat flux of each field-line tube onto the next plane's cells using a
       quadratic reconstruction of the flux inside the tube and the exact
       overlaps of the tube with those cells. zoidberg writes the matrices
-      (``k2_forward_*``, ``k2_backward_*``) into unstructured grid files.
+      (``k2_forward_*``, ``k2_backward_*``) into unstructured grid files
+      whose unknowns are the dual-cell centroids (``k2=True`` forces them
+      on other grids).
       It is the default on unstructured FCI grids whose grid file has these
       matrices.
 

@@ -187,8 +187,10 @@ def main():
         write(
             folder / f"US_slab_y_{ny}.fci.grid.nc",
             args.force,
+            # K2 although the unknowns are not the dual-cell centroids: the
+            # 1D conduction test measures its order along y
             lambda fn, ny=ny: make_unstructured_grid(
-                fn, slab_y_poloidal(), field(), ny=ny, Ly=2.0 * np.pi
+                fn, slab_y_poloidal(), field(), ny=ny, Ly=2.0 * np.pi, k2=True
             ),
         )
 
@@ -237,7 +239,8 @@ def main():
     write(
         folder / "US_closed_16.fci.grid.nc",
         args.force,
-        lambda fn: make_test_grid("bout_mms", 16, filename=fn),
+        # K2 (no walls): its conservation is tested as the default method
+        lambda fn: make_test_grid("bout_mms", 16, filename=fn, k2=True),
     )
 
     folder = here / "US_cyl_walls"
