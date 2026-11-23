@@ -37,6 +37,7 @@ charge = 1
 AA = 1
 anomalous_D = 10
 anomalous_chi = 10
+thermal_conduction = false
 
 [Nh+]
 function = 0.1 + 0.9 * cos(pi * (gridvar:R - 2))
