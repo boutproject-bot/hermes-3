@@ -2,7 +2,7 @@ scipy~=1.4
 numpy~=2.0
 netcdf4~=1.5
 boututils
-zoidberg[unstructured] @ git+https://github.com/boutproject-bot/zoidberg.git@24b348988f26842814729f0b8a5a98d5a4dfbe94
+zoidberg[unstructured] @ git+https://github.com/boutproject-bot/zoidberg.git@198c44829f90f35cb26b8c0dc00d79f45a8f0a83
 boutdata @ git+https://github.com/boutproject/boutdata.git@0f9e58cc98c028ed4bf433295ad36871e90f3c43
 xbout @ git+https://github.com/boutproject/xbout.git@028bea942008d7248a314c62994ec324fc435522
 xhermes @ git+https://github.com/boutproject/xhermes.git@84ddc4f8eb5ed9f0873c72d7bf41a0c824be2dee
