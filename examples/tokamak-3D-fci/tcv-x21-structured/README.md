@@ -23,10 +23,14 @@ python /path/to/zoidberg/examples/tcv.py
 ```
 
 It writes `TCV_X21_68_2_512_16_1.fci.grid.nc` and, after marking the end points
-beyond the last cell centre as wall hits, `cor_TCV_X21_68_2_512_16_1.fci.grid.nc`,
-which this input uses (68 x 2 x 512; about 4 min and 2 GB). The grid contains
-the poloidal flux `psi`, which the input uses for the initial profiles and
-the sources.
+beyond the last cell centre as wall hits, `cor_TCV_X21_68_2_512_16_1.fci.grid.nc`
+(68 x 2 x 512; about 4 min and 2 GB). The grid contains the poloidal flux
+`psi`, which the input uses for the initial profiles and the sources. Then add
+the cell numbering of the support-operator conduction method (about 30 s):
+
+```bash
+python add_cell_numbers.py cor_TCV_X21_68_2_512_16_1.fci.grid.nc tcv_x21_structured.fci.nc
+```
 
 # Running
 
@@ -34,7 +38,7 @@ the sources.
 mpirun -np 2 hermes-3 -d .
 ```
 
-With the default conduction method (`original`) the run slows down strongly
-after t = 90 (in units of 1/Omega_ci). The support-operator method
-(`conduction_method = petscoperator`) needs the cell numbering of the grid
-file, which `tcv.py` does not write yet.
+The input uses the support-operator conduction method (`conduction_method =
+petscoperator`); t = 100 (in units of 1/Omega_ci) takes about 2 min on 2
+processes. With the default method (`original`) the run slows down strongly
+after t = 90.

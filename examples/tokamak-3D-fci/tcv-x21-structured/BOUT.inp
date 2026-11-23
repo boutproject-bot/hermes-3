@@ -7,11 +7,15 @@
 nout = 10
 timestep = 10
 
+# Support-operator conduction: needs the cell numbering of add_cell_numbers.py
+# (with the default method the run slows down strongly after t = 90)
+conduction_method = petscoperator
+
 [mesh:paralleltransform]
 type = fci
 
 [mesh]
-file = "cor_TCV_X21_68_2_512_16_1.fci.grid.nc"
+file = "tcv_x21_structured.fci.nc"
 # Sheaths only where field lines leave through the outer line (SOL and plates)
 
 [input:grid_variables]
