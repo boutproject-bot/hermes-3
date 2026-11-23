@@ -118,7 +118,8 @@ come from the grid file:
    type = precomputed
 
 The index coordinates ``x`` and ``z`` are not geometric (an input expression
-that uses them gives a warning), so input expressions use grid variables
+that uses them stops with an error, unless ``input:allow_index_coordinates =
+true``), so input expressions use grid variables
 instead, e.g. ``gridvar:R``, ``gridvar:Z`` or ``gridvar:flux_label``, declared
 in ``[input:grid_variables]`` (``R = field3d``). On grids with wall nodes,
 every field whose x boundary is read from the input (e.g. ``Nh+``, ``Ph+``,

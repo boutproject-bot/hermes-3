@@ -4,7 +4,8 @@
 # operators, boundary loops, Laplacian inversions or Jacobian colouring
 # must stop with a clear error on unstructured FCI grids instead of giving
 # silently wrong results. Also checks that the base input runs and that an
-# expression in the index coordinate x gives a warning.
+# expression in the index coordinate x stops (and only warns with
+# input:allow_index_coordinates = true).
 
 import sys
 from pathlib import Path
@@ -13,13 +14,19 @@ from boututils.run_wrapper import launch, shell
 
 GUARD = "is not supported on unstructured FCI grids"
 COLOURING = "Jacobian colouring is not supported on unstructured meshes"
-INDEX_WARNING = "uses the index coordinate x or z on an unstructured mesh"
+INDEX_COORDINATE = "uses the index coordinate x or z on an unstructured mesh"
 WALL_NODES = "stores Dirichlet wall nodes in the x guard cells"
 
 # (name, command-line options, expect failure, expected text)
 CASES = [
     ("base input", "", False, None),
-    ("index coordinate x", "'Nh+:function=1+0.1*x'", False, INDEX_WARNING),
+    ("index coordinate x", "'Nh+:function=1+0.1*x'", True, INDEX_COORDINATE),
+    (
+        "index coordinate x, allowed",
+        "'Nh+:function=1+0.1*x' input:allow_index_coordinates=true",
+        False,
+        INDEX_COORDINATE,
+    ),
     (
         "neutral_mixed",
         "hermes:components=h+,d d:type=neutral_mixed d:AA=2",
