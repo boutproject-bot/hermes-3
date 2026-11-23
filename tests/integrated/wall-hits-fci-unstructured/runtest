@@ -170,12 +170,14 @@ def summary(path, unstructured):
     return result
 
 
-# Thresholds: about twice the measured differences (volume averages below
-# 0.001, 0.009, 0.011; losses below 0.001, 0.040, 0.077; electron sheath
-# sink 0.083; profiles 0.026, 0.026). Without the two zoidberg options the
-# Pe profiles differ by 0.21; with the earlier rule for wall hits (nearest
-# node on the wall) the electron sheath sink differs by 0.43.
+# Thresholds: about twice the measured differences, at least 0.02 (volume
+# averages below 0.001, 0.009, 0.011; losses below 0.001, 0.040, 0.077;
+# electron sheath sink 0.083; profiles 0.026, 0.026). Without the two
+# zoidberg options the Pe profiles differ by 0.21; with the earlier rule for
+# wall hits (nearest node on the wall) the electron sheath sink differs by
+# 0.43.
 AVERAGE_TOL = 0.03
+PARTICLE_LOSS_TOL = 0.02
 LOSS_TOL = 0.15
 SHEATH_TOL = 0.2
 PROFILE_TOL = 0.06
@@ -206,7 +208,8 @@ for name, case in (("structured", s), ("unstructured", u)):
         print(f"{name}: stopped at t = {case['t']}")
         ok = False
 checks = [(var, AVERAGE_TOL) for var in ("Nh+", "Ph+", "Pe")]
-checks += [(f"loss {var}", LOSS_TOL) for var in ("Nh+", "Ph+", "Pe")]
+checks += [("loss Nh+", PARTICLE_LOSS_TOL)]
+checks += [(f"loss {var}", LOSS_TOL) for var in ("Ph+", "Pe")]
 checks += [("Ee_sheath", SHEATH_TOL), ("Eh+_sheath", None)]
 for key, tol in checks:
     diff = abs(u[key] - s[key]) / abs(s[key])
