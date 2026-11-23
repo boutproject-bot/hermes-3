@@ -7,20 +7,19 @@
 # the sheath acts at parallel boundary points inside the poloidal planes.
 #
 # The unstructured grid keeps the Dirichlet wall nodes out of the parallel
-# maps (map_walls=False) and treats end points next to a wall as wall hits
-# (near_wall_hits=True), so that heat carried along the field lines leaves
-# through the walls only via the sheath. The structured run uses
+# maps (map_walls=False) and treats end points between the last plasma nodes
+# and the wall as wall hits, as structured FCI does beyond the last cell
+# centre (near_wall_hits=True), so that heat carried along the field lines
+# leaves through the walls only via the sheath. The structured run uses
 # conduction_method = petscoperator (with the default method the structured
 # run stalls in this geometry).
 #
 # Both runs must reach the end time and agree in the volume averages of
-# Nh+, Ph+ and Pe, in the particle loss since t = 0 and in the radial
-# profiles of Nh+ and Pe (bins in R, averaged over Z and y). The energy
-# losses since t = 0 and the sheath heat sinks are printed but not checked:
-# the unstructured grid has fewer sheath boundary points next to the walls
-# (end points nearer a wall node than a plasma node) than the structured
-# one (end points beyond the last cell centre), so its electron sheath sink
-# is about 40 % smaller.
+# Nh+, Ph+ and Pe, in the particle and energy losses since t = 0, in the
+# electron sheath heat sink and in the radial profiles of Nh+ and Pe (bins
+# in R, averaged over Z and y). The ion sheath heat sink is printed only: it
+# is about ten times smaller and changes sign with the resolution on the
+# structured grid.
 
 import sys
 import uuid
@@ -171,12 +170,15 @@ def summary(path, unstructured):
     return result
 
 
-# Thresholds: about twice the measured differences (volume averages
-# below 0.001, 0.025, 0.028; particle loss 0.020; profiles 0.025, 0.048).
-# Without the two zoidberg options the Pe profiles differ by 0.21.
-AVERAGE_TOL = 0.06
-LOSS_TOL = 0.05
-PROFILE_TOL = 0.1
+# Thresholds: about twice the measured differences (volume averages below
+# 0.001, 0.009, 0.011; losses below 0.001, 0.040, 0.077; electron sheath
+# sink 0.083; profiles 0.026, 0.026). Without the two zoidberg options the
+# Pe profiles differ by 0.21; with the earlier rule for wall hits (nearest
+# node on the wall) the electron sheath sink differs by 0.43.
+AVERAGE_TOL = 0.03
+LOSS_TOL = 0.15
+SHEATH_TOL = 0.2
+PROFILE_TOL = 0.06
 
 make_structured()
 make_unstructured()
@@ -204,8 +206,8 @@ for name, case in (("structured", s), ("unstructured", u)):
         print(f"{name}: stopped at t = {case['t']}")
         ok = False
 checks = [(var, AVERAGE_TOL) for var in ("Nh+", "Ph+", "Pe")]
-checks += [("loss Nh+", LOSS_TOL), ("loss Ph+", None), ("loss Pe", None)]
-checks += [("Eh+_sheath", None), ("Ee_sheath", None)]
+checks += [(f"loss {var}", LOSS_TOL) for var in ("Nh+", "Ph+", "Pe")]
+checks += [("Ee_sheath", SHEATH_TOL), ("Eh+_sheath", None)]
 for key, tol in checks:
     diff = abs(u[key] - s[key]) / abs(s[key])
     print(
