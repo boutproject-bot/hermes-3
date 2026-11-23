@@ -71,6 +71,9 @@ bndry_xout = dirichlet_node(0.0)
 [Nh+]
 bndry_xin = dirichlet_node(1.0)
 bndry_xout = dirichlet_node(0.1)
+# Zero gradient where field lines leave the domain without a sheath (the
+# core boundary; the default is parallel_dirichlet_o2 with value 0)
+bndry_par_all = parallel_neumann_o2
 function = 0.1 + 0.9 * exp(-((psin:function - 0.93) / 0.08)^2)
 
 flux = 1e22
@@ -85,6 +88,7 @@ function = 0.0
 [Ph+]
 bndry_xin = dirichlet_node(1.0)
 bndry_xout = dirichlet_node(0.01)
+bndry_par_all = parallel_neumann_o2
 function = 0.01 + 0.99 * exp(-((psin:function - 0.93) / 0.08)^2)
 
 heating = 1e5
@@ -104,6 +108,7 @@ thermal_conduction = true
 [Pe]
 bndry_xin = dirichlet_node(1.0)
 bndry_xout = dirichlet_node(0.01)
+bndry_par_all = parallel_neumann_o2
 function = 0.01 + 0.99 * exp(-((psin:function - 0.93) / 0.08)^2)
 
 source = `Ph+`:source

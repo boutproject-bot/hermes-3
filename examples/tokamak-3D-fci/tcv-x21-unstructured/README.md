@@ -57,8 +57,10 @@ nodes are stored in the x guard cells (`MXG` = 2574 here), so with
 mpirun -np 4 hermes-3 -d .
 ```
 
-The first outputs agree with the structured run (flow at the vertical plate,
-temperature extremes), but the solver currently needs 10 to 100 times more
-work than on the structured grid. The cause is the parallel ion viscosity at
-the sheath points on the vertical plate; without `braginskii_ion_viscosity`
-the run is about as cheap as the structured one. This is being investigated.
+Unlike on the structured grid, some field lines next to the core surface
+leave the domain through it. These boundary points have no sheath, so the
+density and the pressures need a parallel boundary condition there
+(`bndry_par_all = parallel_neumann_o2`): with the default (zero value) the
+ion velocity at these points becomes very large and the run is 10 to 100
+times more expensive. The structured input sets the same condition; it has
+no effect there.
