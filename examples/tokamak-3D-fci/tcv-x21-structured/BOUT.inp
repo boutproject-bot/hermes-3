@@ -1,0 +1,106 @@
+# Reference electron-ion transport input on the TCV-X21 geometry: the core
+# flux surface at psin = 0.93 to an outer line of two flux surfaces and two
+# straight divertor plates. Structured grid from zoidberg's examples/tcv.py,
+# see README.md. Profiles and sources are functions of the normalised poloidal
+# flux psin = 1 - psi / 0.11175064 (GEQDSK 65402_t1).
+
+nout = 10
+timestep = 10
+
+[mesh:paralleltransform]
+type = fci
+
+[mesh]
+file = "cor_TCV_X21_68_2_512_16_1.fci.grid.nc"
+# Sheaths only where field lines leave through the outer line (SOL and plates)
+
+[input:grid_variables]
+psi = field3d
+
+[psin]
+function = 1 - gridvar:psi / 0.11175064
+
+[solver]
+mxstep = 10000
+type = pvode
+rtol = 1e-5
+atol = 1e-8
+
+[hermes]
+components = (h+, e, sound_speed, braginskii_collisions, braginskii_friction,
+              braginskii_heat_exchange, sheath_boundary_fci, braginskii_ion_viscosity,
+              braginskii_conduction)
+
+Nnorm = 1e19  # Reference density [m^-3]
+Bnorm = 1     # Reference magnetic field [T]
+Tnorm = 50    # Reference temperature [eV]
+
+[braginskii_collisions]
+electron_ion = true
+neutral_neutral = false
+ion_neutral = false
+electron_neutral = false
+
+[sheath_boundary_fci]
+gamma_e = 6.5
+gamma_i = 4.5
+
+[sound_speed]
+electron_dynamics = false
+
+################################################################
+# Ions
+
+[h+]
+type = evolve_density, evolve_momentum, evolve_pressure, anomalous_diffusion
+p_div_v = true
+
+AA = 1
+charge = 1
+thermal_conduction = true
+anomalous_D = 10    # [m^2/s]
+anomalous_chi = 10  # [m^2/s]
+
+[Vh+]
+bndry_xin = dirichlet(0.0)
+bndry_xout = dirichlet(0.0)
+
+[Nh+]
+bndry_xin = dirichlet(1.0)
+bndry_xout = dirichlet(0.1)
+function = 0.1 + 0.9 * exp(-((psin:function - 0.93) / 0.08)^2)
+
+flux = 1e22
+# Source at the core boundary
+source = flux * exp(-((psin:function - 0.93) / 0.02)^2) / 50
+
+[NVh+]
+bndry_xin = dirichlet(0.0)
+bndry_xout = dirichlet(0.0)
+function = 0.0
+
+[Ph+]
+bndry_xin = dirichlet(1.0)
+bndry_xout = dirichlet(0.01)
+function = 0.01 + 0.99 * exp(-((psin:function - 0.93) / 0.08)^2)
+
+heating = 1e5
+T_source = heating / (`Nh+`:flux * 1.602e-19 * 1.5)
+source =  `Nh+`:source * T_source * 1.602176634e-19
+
+################################################################
+# Electrons
+
+[e]
+type = quasineutral, zero_current, evolve_pressure
+
+AA = 1.0 / 1836.0
+charge = -1
+thermal_conduction = true
+
+[Pe]
+bndry_xin = dirichlet(1.0)
+bndry_xout = dirichlet(0.01)
+function = 0.01 + 0.99 * exp(-((psin:function - 0.93) / 0.08)^2)
+
+source = `Ph+`:source

@@ -31,8 +31,8 @@ def run_examples(
     ):
         category_name = str(category.relative_to(examples_dir))
         print(f"\033[1mRunning tests in category '{category_name}'.\033[0m")
-        if category_name == "stellarator-3D":
-            print("Skipping stellarator 3D examples in the CI")
+        if category_name in ("stellarator-3D", "tokamak-3D-fci"):
+            print(f"Skipping {category_name} examples in the CI (generated grids)")
             continue
         print(f"Working directory: {category}")
         os.chdir(category)
