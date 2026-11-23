@@ -54,7 +54,8 @@ def main():
     parser.add_argument(
         "--zoidberg",
         default=Path(zoidberg.__file__).resolve().parent.parent,
-        help="path of the zoidberg repository (default: next to the package)",
+        help="path of the zoidberg repository (default: the source tree of an "
+        "editable install)",
     )
     parser.add_argument("--mesh-size", type=float, default=4e-3, help="[m]")
     parser.add_argument(

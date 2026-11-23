@@ -46,6 +46,10 @@ nodes are stored in the x guard cells (`MXG` = 2574 here), so with
   `dirichlet(...)`.
 * The profiles use the grid variable `psi` (written by zoidberg from the
   equilibrium), as in the structured example.
+* The parallel heat conduction uses the unstructured default, the
+  flux-reconstructed divergence (`petscoperatork2`, the grid file contains
+  its matrices); the structured example sets the support operators
+  (`conduction_method = petscoperator`).
 
 # Running
 

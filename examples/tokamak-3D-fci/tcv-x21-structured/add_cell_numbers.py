@@ -42,10 +42,6 @@ def main():
                     dims.append(f"{name}_dim{n}")
                     grid.createDimension(dims[-1], size)
             grid.createVariable(name, value.dtype, dims)[...] = value
-        for name in ("xt_prime", "zt_prime"):
-            for direction in ("forward", "backward"):
-                key = f"{direction}_{name}"
-                grid[key][...] = maps[key]
     print("Created", dst)
 
 
