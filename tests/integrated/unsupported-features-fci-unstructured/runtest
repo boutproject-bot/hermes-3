@@ -34,22 +34,28 @@ CASES = [
     ("diamagnetic_drift", "hermes:components=h+,diamagnetic_drift", True, GUARD),
     (
         "ion viscosity (perpendicular)",
-        "hermes:components=h+,braginskii_ion_viscosity "
-        "braginskii_ion_viscosity:perpendicular=true",
+        (
+            "hermes:components=h+,braginskii_ion_viscosity "
+            "braginskii_ion_viscosity:perpendicular=true"
+        ),
         True,
         GUARD,
     ),
     (
         "SOL recycling",
-        "hermes:components=h+,recycling recycling:species=h+ "
-        "h+:recycle_as=h+ h+:sol_recycle=true",
+        (
+            "hermes:components=h+,recycling recycling:species=h+ "
+            "h+:recycle_as=h+ h+:sol_recycle=true"
+        ),
         True,
         GUARD,
     ),
     (
         "target recycling",
-        "hermes:components=h+,recycling recycling:species=h+ "
-        "h+:recycle_as=h+ h+:target_recycle=true",
+        (
+            "hermes:components=h+,recycling recycling:species=h+ "
+            "h+:recycle_as=h+ h+:target_recycle=true"
+        ),
         True,
         GUARD,
     ),
@@ -58,18 +64,22 @@ CASES = [
     ("neumann_boundary_average_z", "Nh+:neumann_boundary_average_z=true", True, GUARD),
     (
         "evolve_pressure low_T_diffuse_perp",
-        "h+:type=evolve_density,evolve_pressure,anomalous_diffusion "
-        "'Ph+:bndry_xin=dirichlet_node(1.0)' 'Ph+:bndry_xout=dirichlet_node(1.0)' "
-        "h+:low_T_diffuse_perp=true",
+        (
+            "h+:type=evolve_density,evolve_pressure,anomalous_diffusion "
+            "'Ph+:bndry_xin=dirichlet_node(1.0)' 'Ph+:bndry_xout=dirichlet_node(1.0)' "
+            "h+:low_T_diffuse_perp=true"
+        ),
         True,
         GUARD,
     ),
     (
         "evolve_momentum low_p_diffuse_perp",
-        "h+:type=fixed_density,evolve_momentum h+:density=1e18 "
-        "'NVh+:bndry_xin=dirichlet_node(0.0)' 'NVh+:bndry_xout=dirichlet_node(0.0)' "
-        "'Vh+:bndry_xin=dirichlet_node(0.0)' 'Vh+:bndry_xout=dirichlet_node(0.0)' "
-        "h+:low_p_diffuse_perp=true",
+        (
+            "h+:type=fixed_density,evolve_momentum h+:density=1e18 "
+            "'NVh+:bndry_xin=dirichlet_node(0.0)' 'NVh+:bndry_xout=dirichlet_node(0.0)' "
+            "'Vh+:bndry_xin=dirichlet_node(0.0)' 'Vh+:bndry_xout=dirichlet_node(0.0)' "
+            "h+:low_p_diffuse_perp=true"
+        ),
         True,
         GUARD,
     ),

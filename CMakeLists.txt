@@ -307,11 +307,12 @@ if(HERMES_TESTS)
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/grids)
 
     # Unstructured FCI grids need zoidberg.unstructured, which the released
-    # zoidberg does not have yet. bout++Config.cmake does not export a
-    # zoidberg variable, so check here.
+    # zoidberg does not have yet. bout++Config.cmake does not export a zoidberg
+    # variable, so check here.
     execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} -c
-              "import importlib.util as u; exit(u.find_spec('zoidberg.unstructured') is None)"
+      COMMAND
+        ${PYTHON_EXECUTABLE} -c
+        "import importlib.util as u; exit(u.find_spec('zoidberg.unstructured') is None)"
       RESULT_VARIABLE zoidberg_unstructured_missing
       OUTPUT_QUIET ERROR_QUIET)
     # Grids with curved walls are meshed with gmsh
@@ -324,7 +325,8 @@ if(HERMES_TESTS)
       set(gmsh_FOUND ON)
     else()
       set(gmsh_FOUND OFF)
-      message(STATUS "gmsh not found: skipping unstructured tests with curved walls")
+      message(
+        STATUS "gmsh not found: skipping unstructured tests with curved walls")
     endif()
     if(zoidberg_unstructured_missing EQUAL 0)
       set(zoidberg_unstructured_FOUND ON)
@@ -335,7 +337,9 @@ if(HERMES_TESTS)
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/grids/fci_unstructured)
     else()
       set(zoidberg_unstructured_FOUND OFF)
-      message(STATUS "zoidberg.unstructured not found: skipping unstructured FCI tests")
+      message(
+        STATUS
+          "zoidberg.unstructured not found: skipping unstructured FCI tests")
     endif()
     file(CREATE_LINK ${CMAKE_CURRENT_SOURCE_DIR}/grids
          ${CMAKE_CURRENT_BINARY_DIR}/grids SYMBOLIC)
@@ -359,14 +363,15 @@ if(HERMES_TESTS)
     cmake_parse_arguments(HERMES_TEST_OPTIONS "${options}" "${oneValueArgs}"
                           "${multiValueArgs}" ${ARGN})
 
-    # Every other test needs a data/BOUT.inp tracked by git: an untracked
-    # local copy would let the test pass here and fail in a fresh clone.
-    if(NOT HERMES_TEST_OPTIONS_GENERATES_INPUT
-       AND NOT HERMES_TEST_OPTIONS_NO_INPUT)
+    # Every other test needs a data/BOUT.inp tracked by git: an untracked local
+    # copy would let the test pass here and fail in a fresh clone.
+    if(NOT HERMES_TEST_OPTIONS_GENERATES_INPUT AND NOT
+                                                   HERMES_TEST_OPTIONS_NO_INPUT)
       set(_input tests/integrated/${TESTNAME}/data/BOUT.inp)
       if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${_input})
-        message(FATAL_ERROR "Test ${TESTNAME} has no ${_input}. Add it, or "
-                            "register the test with GENERATES_INPUT or NO_INPUT")
+        message(
+          FATAL_ERROR "Test ${TESTNAME} has no ${_input}. Add it, or "
+                      "register the test with GENERATES_INPUT or NO_INPUT")
       endif()
       if(GIT_FOUND AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/.git)
         execute_process(
@@ -505,21 +510,21 @@ if(HERMES_TESTS)
     2D-fluid-anomalous-fci
     1D-golden-answer-fci)
     hermes_add_integrated_test(
-      ${test}-unstructured GENERATES_INPUT REQUIRES BOUT_USE_METRIC_3D BOUT_HAS_PETSC
-      zoidberg_unstructured_FOUND)
+      ${test}-unstructured GENERATES_INPUT REQUIRES BOUT_USE_METRIC_3D
+      BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
   endforeach()
   # Variant with Dirichlet x walls (wall nodes held at the solution)
   hermes_add_integrated_test(
-    2D-density-anomalous-fci-unstructured-walls GENERATES_INPUT REQUIRES BOUT_USE_METRIC_3D
-    BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
+    2D-density-anomalous-fci-unstructured-walls GENERATES_INPUT REQUIRES
+    BOUT_USE_METRIC_3D BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
   # Energy conservation of parallel conduction (closed field lines)
   hermes_add_integrated_test(
     conduction-conservation-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
     BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
   # Solver work of an unstructured run against its structured counterpart
   hermes_add_integrated_test(
-    solver-statistics-fci-unstructured GENERATES_INPUT REQUIRES BOUT_USE_METRIC_3D
-    BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
+    solver-statistics-fci-unstructured GENERATES_INPUT REQUIRES
+    BOUT_USE_METRIC_3D BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
   # Heat balance of sheaths and support-operator conduction
   hermes_add_integrated_test(
     sheath-heat-balance-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
@@ -546,12 +551,17 @@ if(HERMES_TESTS)
     zoidberg_unstructured_FOUND)
   # Insulating walls: perpendicular transport keeps particles and energy
   hermes_add_integrated_test(
-    insulating-walls-fci-unstructured REQUIRES BOUT_USE_METRIC_3D BOUT_HAS_PETSC
-    zoidberg_unstructured_FOUND)
+    insulating-walls-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
+    BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
   # Variant on a gmsh annulus with two curved Dirichlet walls
   hermes_add_integrated_test(
-    2D-density-anomalous-fci-unstructured-annulus GENERATES_INPUT REQUIRES BOUT_USE_METRIC_3D
-    BOUT_HAS_PETSC zoidberg_unstructured_FOUND gmsh_FOUND)
+    2D-density-anomalous-fci-unstructured-annulus
+    GENERATES_INPUT
+    REQUIRES
+    BOUT_USE_METRIC_3D
+    BOUT_HAS_PETSC
+    zoidberg_unstructured_FOUND
+    gmsh_FOUND)
 
   option(HERMES_UNIT_TESTS "Build the unit tests" ON)
   option(HERMES_DIVOPS_MMS_TESTS "Build the differential operator MMS tests" ON)
