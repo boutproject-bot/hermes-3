@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+
+# Insulating walls (zoidberg perp_walls=False): no perpendicular flux
+# crosses the faces between evolving and Dirichlet wall nodes. On a slab
+# whose field lines leave through the walls in R (as in
+# wall-hits-fci-unstructured, grids with map_walls=False and
+# near_wall_hits=True), density and pressure diffuse across the field with
+# no sources, no parallel flow and no sheath (data/BOUT.inp). With
+# insulating walls the particle and energy content of the evolving nodes
+# must stay constant to round-off; with Dirichlet walls (the default) it
+# must change, so that the check is not trivially passed.
+
+import sys
+from pathlib import Path
+
+import netCDF4
+import numpy as np
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+from zoidberg.field import Slab
+from zoidberg.unstructured import UnstructuredPoloidalGrid, make_unstructured_grid
+
+RC, LX, LZ, LY = 2.0, 1.0, 1.0, 2.0 * np.pi
+NX, NY, NZ = 16, 8, 8
+
+
+class Tilted(Slab):
+    def __init__(self):
+        super().__init__(By=1.0, Bz=0.05, xcentre=RC, Bzprime=0.0)
+
+    def Bxfunc(self, x, z, phi):
+        return np.full(np.shape(x), 0.4)
+
+
+def make_grid(name, perp_walls):
+    pol = UnstructuredPoloidalGrid.slab(
+        NX + 1,
+        NZ,
+        LX,
+        LZ,
+        R0=RC - 0.5 * LX,
+        Z0=-0.5 * LZ + 0.5 * LZ / NZ,
+        jitter=0.2,
+        jitter_dirs="z",
+        periodic_R=False,
+        periodic_Z=True,
+        seed=400 + NX,
+        r_on_walls=True,
+    )
+    pol.walls = (
+        np.flatnonzero(np.isclose(pol.R, RC - 0.5 * LX)),
+        np.flatnonzero(np.isclose(pol.R, RC + 0.5 * LX)),
+    )
+    pol.use_centroid_dofs()
+    make_unstructured_grid(
+        name,
+        pol,
+        Tilted(),
+        ny=NY,
+        Ly=LY,
+        dirichlet_walls=True,
+        map_walls=False,
+        near_wall_hits=True,
+        perp_walls=perp_walls,
+        k2=False,
+    )
+
+
+def change(name):
+    """Largest relative change of the particle and energy content"""
+    grid = f"{name}.fci.nc"
+    make_grid(grid, name == "dirichlet")
+    path = Path(name)
+    path.mkdir(exist_ok=True)
+    path.joinpath("BOUT.inp").write_text(Path("data/BOUT.inp").read_text())
+    shell(f"rm -f {name}/BOUT.dmp.*.nc")
+    status, out = launch_safe(
+        f"../../../hermes-3 -d {name} mesh:file={grid}", nproc=1, pipe=True
+    )
+    path.joinpath("run.log").write_text(out)
+    if status:
+        print(f"{name}: run failed\n{out}")
+        sys.exit(1)
+    with netCDF4.Dataset(grid) as g:
+        mxg = int(g["MXG"][...])
+        dV = np.asarray(g["dy"][:] * g["dagp_us_volume"][:])[mxg:-mxg, :, 0]
+    result = {}
+    for var in ("Nh+", "Ph+"):
+        f = collect(var, path=name, info=False, xguards=True, yguards=False)
+        content = np.sum(f[:, mxg:-mxg, :, 0] * dV, axis=(1, 2))
+        result[var] = np.max(np.abs(content - content[0])) / content[0]
+        print(f"{name}: {var} content changes by {result[var]:.2e} (relative)")
+    return result
+
+
+insulating, dirichlet = change("insulating"), change("dirichlet")
+ok = all(insulating[var] < 1e-10 and dirichlet[var] > 1e-3 for var in insulating)
+if ok:
+    print(" => Test passed")
+    sys.exit(0)
+print(" => Test failed")
+sys.exit(1)

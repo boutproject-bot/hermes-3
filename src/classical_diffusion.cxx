@@ -1,4 +1,5 @@
 #include "classical_diffusion.hxx"
+#include "../include/hermes_utils.hxx"
 
 #include "../include/div_ops.hxx"
 #include <bout/fv_ops.hxx>
@@ -10,6 +11,8 @@ ClassicalDiffusion::ClassicalDiffusion(std::string name, Options& alloptions, So
            // FIXME: This is only read velocity or temperature are set for the species.
            readOnly("species:{all_species}:AA"),
            readWrite("species:{all_species}:{output}")}) {
+  requireStructuredMesh("Component classical_diffusion");
+
   Options& options = alloptions[name];
 
   Bsq = SQ(bout::globals::mesh->getCoordinates()->Bxy());

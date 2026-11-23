@@ -1,3 +1,5 @@
+import sys
+
 import matplotlib.pyplot as plt
 import numpy as np
 import zoidberg
@@ -180,4 +182,11 @@ else:
         mw.add_grid_field(grid, field)
         mw.add_maps(maps)
         mw.add_dagp()
+
+    # Common radial label (also written to the unstructured grid), used for
+    # the initial profile: see ../dommaschk_label.py
+    sys.path.insert(0, str(script_dir.parent))
+    from dommaschk_label import FluxLabel, add_to_grid
+
+    add_to_grid(filename, FluxLabel())
     print("Finished creating the dommaschk grid!")

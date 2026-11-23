@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+
+# The reference electron-ion transport input (data/BOUT.inp) on
+# matching structured and unstructured FCI grids: straight field, sheaths at
+# both y ends, R-dependent source.
+#
+# Each run must close the particle and thermal-energy balances and satisfy
+# the Bohm condition, with check_case() of ../1D-golden-answer-fci,
+# copied unchanged except for the ion energy balance: the ions use
+# p_div_v = true, i.e. 3/2 the wall flux of P and the work E_PdivV.
+# The two runs must give the same plane-averaged y profiles and, within the
+# resolution of the structured grid (4 cells in R), the same radial profiles.
+
+import shutil
+import sys
+from pathlib import Path
+
+import netCDF4
+import numpy as np
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+from numpy import abs
+
+grid_s = "../../../grids/slab_with_BC/MMS_straight_slab_8_256_4_True.fci.grid.nc"
+grid_u = (
+    "../../../grids/fci_unstructured/US_slab_with_BC/US_slab_with_BC_256.fci.grid.nc"
+)
+
+args = ""
+nproc = 1
+
+BOHM_SMOOTHING = np.sqrt(0.1)  # sheath_boundary_fci default
+
+
+def limit_free(fm, fc):
+    return np.where(fm < 1e-10, fc, fc**2 / fm)
+
+
+def bohm_speed(c, u, smoothing):
+    return 0.5 * (c + u + np.sqrt((c - u) ** 2 + (smoothing * c) ** 2))
+
+
+def check_case(name, options, smoothing):
+    path = Path(name)
+    path.mkdir(exist_ok=True)
+    shutil.copy("data/BOUT.inp", path / "BOUT.inp")
+    shell(f"rm -f {name}/BOUT.dmp.*.nc")
+    cmd = (
+        f"../../../hermes-3 -d {name} {args} sheath_boundary_fci:diagnose=true "
+        f"h+:diagnose=true e:diagnose=true {options}"
+    )
+    status, out = launch_safe(cmd, nproc=nproc, pipe=True)
+    (path / "run.log").write_text(out)
+    if status:
+        print(f"{name}: run failed\n{out}")
+        return False, None
+
+    def get(var):
+        return collect(var, path=name, info=False, xguards=False, yguards=False)
+
+    with netCDF4.Dataset(path / "BOUT.dmp.0.nc") as d:
+        mxg, myg = int(d["MXG"][...]), int(d["MYG"][...])
+        geo = {
+            v: np.asarray(d[v][:])[mxg:-mxg, myg:-myg, :]
+            for v in ("J", "dx", "dy", "dz", "g_22")
+        }
+    dV = geo["J"] * geo["dx"] * geo["dy"] * geo["dz"]
+    area = geo["J"] * geo["dx"] * geo["dz"] / np.sqrt(geo["g_22"])
+
+    def total(f):
+        return np.sum(f * dV, axis=(1, 2, 3))
+
+    N, Pi, Pe, V = get("Nh+"), get("Ph+"), get("Pe"), get("Vh+")
+    Ti, Te = Pi / N, Pe / N
+    particle_flux = 0.0
+    pressure_flux = {"h+": 0.0, "e": 0.0}
+    mach = []
+    for c, m in (
+        (-1, -2),
+        (0, 1),
+    ):  # upper and lower wall: boundary cell, its neighbour
+
+        def face(f, c=c, m=m):
+            return 0.5 * (f[:, :, c] + limit_free(f[:, :, m], f[:, :, c]))
+
+        sound = np.sqrt(face(Ti) + face(Te))
+        v_sheath = bohm_speed(sound, abs(V[:, :, c]), smoothing)
+        A = area[None, :, c]
+        particle_flux = particle_flux + np.sum(face(N) * v_sheath * A, axis=(1, 2))
+        # Zero current: the electron sheath velocity equals the ion one
+        pressure_flux["h+"] = pressure_flux["h+"] + np.sum(
+            face(Pi) * v_sheath * A, axis=(1, 2)
+        )
+        pressure_flux["e"] = pressure_flux["e"] + np.sum(
+            face(Pe) * v_sheath * A, axis=(1, 2)
+        )
+        mach.append(float((v_sheath / sound)[-1].mean()))
+
+    errors = {}
+    source = total(get("SNh+"))
+    errors["particles"] = (total(get("ddt(Nh+)")) - (source - particle_flux)) / source
+    for sp in ("h+", "e"):
+        lhs = 1.5 * total(get(f"ddt(P{sp})"))
+        src = 1.5 * total(get(f"SP{sp}"))
+        if sp == "h+":  # p_div_v = true: P div V form
+            rhs = src - 1.5 * pressure_flux[sp] + total(get(f"E{sp}_PdivV"))
+        else:
+            rhs = src - 2.5 * pressure_flux[sp] + total(get(f"E{sp}_VgradP"))
+        errors[f"thermal energy {sp}"] = (lhs - rhs) / abs(src)
+
+    ok = True
+    for key, err in errors.items():
+        worst = np.max(abs(err[1:]))  # t = 0: no RHS evaluated yet
+        print(f"{name}: {key} balance, largest relative error {worst:.2e}")
+        if worst > 1e-10:
+            print(f"{name}: {key} balance not closed")
+            ok = False
+    print(
+        f"{name}: sheath-face Mach number (upper, lower wall) {mach[0]:.4f}, {mach[1]:.4f}"
+    )
+    if min(mach) < 1.0 - 1e-12 or abs(mach[0] - mach[1]) > 1e-4:
+        print(f"{name}: Bohm condition violated or asymmetric")
+        ok = False
+    return ok, mach
+
+
+def profiles():
+    """y profiles (averaged over each plane) and mid-plane radial profiles"""
+    ok = True
+    with netCDF4.Dataset("structured/BOUT.dmp.0.nc") as d:
+        mxg = int(d["MXG"][...])
+        vol_s = np.asarray(d["J"][:] * d["dx"][:] * d["dz"][:])[mxg:-mxg, 0, :]
+    with netCDF4.Dataset(grid_s) as g:
+        r_s = np.asarray(g["R"][:])[mxg:-mxg, 0, 0]
+    with netCDF4.Dataset(grid_u) as g:
+        mxg_u = int(g["MXG"][...])  # x guard cells are padding
+        r_u = np.asarray(g["R"][:])[mxg_u:-mxg_u, 0, 0]
+        vol_u = np.asarray(g["dagp_us_volume"][:])[mxg_u:-mxg_u, 0, 0]
+
+    for var in ("Nh+", "Ph+", "Pe", "NVh+"):
+        s = collect(var, path="structured", tind=-1, info=False, xguards=False)[-1]
+        u = collect(var, path="unstructured", tind=-1, info=False)[-1]
+        u = u[mxg_u:-mxg_u, :, 0]
+        y_s = np.einsum("xyz,xz->y", s, vol_s) / vol_s.sum()
+        y_u = np.einsum("xy,x->y", u, vol_u) / vol_u.sum()
+        dy = np.max(abs(y_u - y_s)) / np.max(abs(y_s))
+        print(f"{var}: y profiles differ by {dy:.2e} (relative)")
+        if dy > 1e-3:  # measured 3e-5 ... 7e-5
+            ok = False
+        if var == "NVh+":
+            continue  # no radial variation at the mid plane
+        ym = s.shape[1] // 2
+        s_mid = s[:, ym, :].mean(axis=1)
+        inside = (r_u >= r_s.min()) & (r_u <= r_s.max())
+        diff = np.max(abs(np.interp(r_u[inside], r_s, s_mid) - u[inside, ym]))
+        rel = diff / (s_mid.max() - s_mid.min())
+        print(f"{var}: radial profiles differ by {rel:.3f} of the radial variation")
+        if rel > 0.1:  # measured 0.028
+            ok = False
+    return ok
+
+
+ok_s, _ = check_case("structured", "", BOHM_SMOOTHING)
+ok_u, _ = check_case(
+    "unstructured",
+    f"mesh:file={grid_u} mesh:paralleltransform:xzinterpolation:type=precomputed",
+    BOHM_SMOOTHING,
+)
+success = ok_s and ok_u and profiles()
+
+if success:
+    print(" => Test passed")
+    sys.exit(0)
+else:
+    print(" => Test failed")
+    sys.exit(1)

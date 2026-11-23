@@ -1,0 +1,44 @@
+# Base input of the unsupported-features test: perpendicular diffusion of
+# the ion density on an unstructured slab with Dirichlet x walls. The
+# runtest adds options that are not supported on unstructured grids and
+# checks that each run stops with a clear error.
+
+nout = 1
+timestep = 1
+
+[mesh]
+file = "../../../grids/fci_unstructured/US_slab_xz_walls/US_slab_xz_walls_16.fci.grid.nc"
+extrapolate_y = false
+
+[mesh:paralleltransform]
+type = fci
+
+[mesh:paralleltransform:xzinterpolation]
+type = precomputed
+
+[input:grid_variables]
+R = field3d
+Z = field3d
+
+[solver]
+mxstep = 10000
+rtol = 1e-6
+atol = 1e-10
+
+[hermes]
+components = h+
+
+Nnorm = 1e18
+Bnorm = 1
+Tnorm = 5
+
+[h+]
+type = evolve_density, anomalous_diffusion
+charge = 1.0
+AA = 1.0
+anomalous_D = 1.0
+
+[Nh+]
+function = 1 + 0.1 * sin(6.28318530717959 * gridvar:R) * cos(6.28318530717959 * gridvar:Z)
+bndry_xin = dirichlet_node(1.0)
+bndry_xout = dirichlet_node(1.0)

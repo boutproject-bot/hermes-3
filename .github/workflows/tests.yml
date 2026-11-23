@@ -48,8 +48,8 @@ jobs:
             bout_configure_options: "-DBOUT_TESTS=OFF
                                 -DBOUT_USE_PETSC=ON
                                 -DBOUT_USE_SLEPC=ON
-                                -DBOUT_USE_SUNDIALS=ON
-                                -DSUNDIALS_ROOT=/home/runner/local
+                                -DBOUT_USE_SUNDIALS=OFF
+                                -DBOUT_USE_PVODE=ON
                                 -DBOUT_USE_HYPRE=ON"
             hermes_configure_options: "-DHERMES_ERROR_ON_WARNINGS=ON -DHERMES_UNIT_TESTS=OFF"
           - cmake_build_type: Debug
@@ -59,8 +59,8 @@ jobs:
             bout_configure_options: "-DBOUT_TESTS=OFF
                                      -DBOUT_USE_PETSC=ON
                                      -DBOUT_USE_SLEPC=ON
-                                     -DBOUT_USE_SUNDIALS=ON
-                                     -DSUNDIALS_ROOT=/home/runner/local
+                                     -DBOUT_USE_SUNDIALS=OFF
+                                     -DBOUT_USE_PVODE=ON
                                      -DBOUT_USE_HYPRE=ON
                                      -DBOUT_ENABLE_METRIC_3D=ON"
             hermes_configure_options: "-DHERMES_ERROR_ON_WARNINGS=ON
@@ -71,8 +71,8 @@ jobs:
             bout_configure_options: "-DBOUT_TESTS=OFF
                                      -DBOUT_USE_PETSC=ON
                                      -DBOUT_USE_SLEPC=ON
-                                     -DBOUT_USE_SUNDIALS=ON
-                                     -DSUNDIALS_ROOT=/home/runner/local
+                                     -DBOUT_USE_SUNDIALS=OFF
+                                     -DBOUT_USE_PVODE=ON
                                      -DBOUT_USE_HYPRE=ON
                                      -DBOUT_ENABLE_METRIC_3D=ON"
             hermes_configure_options: "-DHERMES_ERROR_ON_WARNINGS=ON
@@ -111,20 +111,16 @@ jobs:
                  liblapack-dev
                  libparpack2-dev
                  libhypre-dev
+                 libglu1-mesa
+                 libxcursor1
+                 libxft2
+                 libxinerama1
 
       - uses: actions/checkout@v5
         with:
           submodules: true
 
-      - name: Cache SUNDIALS build
-        uses: actions/cache@v6
-        with:
-          path: /home/runner/local
-          key: bout-sundials-${{ matrix.config.os }}-${{ hashFiles('./external/BOUT-dev/.build_sundials_for_ci.sh') }}
-
-      - name: Build SUNDIALS
-        run: ./external/BOUT-dev/.build_sundials_for_ci.sh
-
+      # Time integration uses the bundled PVODE: SUNDIALS is not built
       - name: Install pip packages
         run: |
           ./ci/pip_install.sh
@@ -138,7 +134,6 @@ jobs:
           echo "$BOUT_CONFIGURE_OPTIONS" >> bout_build_info.txt
           lsb_release -sd >> bout_build_info.txt
           pip freeze | grep numpy >> bout_build_info.txt
-          echo "${{ hashFiles('./external/BOUT-dev/.build_sundials_for_ci.sh') }}" >> bout_build_info.txt
           cat bout_build_info.txt
 
       - name: Cache BOUT++ build

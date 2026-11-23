@@ -1,0 +1,50 @@
+# Perpendicular transport only (anomalous diffusion of density and
+# pressure, no sources, no parallel flow, no sheath) on a slab with walls in
+# R. The runtest runs it on unstructured grids with insulating and with
+# Dirichlet walls.
+
+nout = 5
+timestep = 1000
+
+[mesh:paralleltransform]
+type = fci
+
+[mesh:paralleltransform:xzinterpolation]
+type = precomputed
+
+[mesh]
+file = "insulating.fci.nc"
+
+[input:grid_variables]
+R = field3d
+
+[solver]
+mxstep = 10000
+type = pvode
+rtol = 1e-8
+atol = 1e-12
+
+[hermes]
+components = h+
+
+Nnorm = 1e19
+Bnorm = 1
+Tnorm = 50
+
+[h+]
+type = evolve_density, evolve_pressure, anomalous_diffusion
+charge = 1
+AA = 1
+anomalous_D = 10
+anomalous_chi = 10
+thermal_conduction = false
+
+[Nh+]
+function = 0.1 + 0.9 * cos(pi * (gridvar:R - 2))
+bndry_xin = dirichlet_node(0.1)
+bndry_xout = dirichlet_node(0.1)
+
+[Ph+]
+function = 0.01 + 0.99 * cos(pi * (gridvar:R - 2))
+bndry_xin = dirichlet_node(0.01)
+bndry_xout = dirichlet_node(0.01)

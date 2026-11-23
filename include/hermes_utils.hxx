@@ -5,7 +5,27 @@
 #include <algorithm>
 
 #include "bout/bout_enum_class.hxx"
+#include "bout/boutexception.hxx"
+#include "bout/globals.hxx"
+#include "bout/mesh.hxx"
 #include "bout/traits.hxx"
+
+#include <string>
+
+/// Throw if @p used and the mesh is an unstructured FCI grid (nodes along x,
+/// nz = 1). For components and options whose perpendicular operators work in
+/// structured index space (x and z neighbours), loop over boundaries or
+/// invert a Laplacian: on unstructured grids they would silently give wrong
+/// results or write into the Dirichlet wall nodes.
+inline void requireStructuredMesh(const std::string& what, bool used = true,
+                                  Mesh* mesh = bout::globals::mesh) {
+  if (used and (mesh != nullptr) and mesh->isUnstructured()) {
+    throw BoutException("{} is not supported on unstructured FCI grids: it needs "
+                        "structured (index-space) stencils, boundary loops or a "
+                        "Laplacian inversion",
+                        what);
+  }
+}
 
 inline BoutReal floor(BoutReal value, BoutReal min) { return std::max(value, min); }
 

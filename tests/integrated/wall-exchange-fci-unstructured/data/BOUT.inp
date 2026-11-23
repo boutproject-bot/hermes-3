@@ -1,0 +1,60 @@
+# Parallel heat exchange with Dirichlet wall nodes through the interpolation
+# stencils of near-wall nodes. Cylindrical annulus with a sheared field (the
+# parallel maps interpolate) and Dirichlet walls in R; field lines do not
+# reach the walls. Fixed density, evolving electron and ion pressure,
+# support-operator conduction only.
+
+nout = 100
+timestep = 10
+
+[mesh]
+file = "../../../grids/fci_unstructured/US_cyl_walls/US_cyl_walls_16.fci.grid.nc"
+extrapolate_y = false
+
+[mesh:paralleltransform]
+type = fci
+
+[mesh:paralleltransform:xzinterpolation]
+type = precomputed
+
+[input:grid_variables]
+R = field3d
+Z = field3d
+
+[solver]
+mxstep = 100000
+rtol = 1e-9
+atol = 1e-12
+
+[hermes]
+components = (h+, e, braginskii_collisions, braginskii_conduction)
+
+Nnorm = 1e19
+Bnorm = 1
+Tnorm = 50
+
+[h+]
+type = fixed_density, evolve_pressure
+AA = 1
+charge = 1
+density = 1e19  # [m^-3]
+thermal_conduction = true
+diagnose = true
+
+[Ph+]
+function = 1 + 0.3 * sin(6.283185307179586 * gridvar:Z - y) * sin(3.141592653589793 * (gridvar:R - 1))
+bndry_xin = dirichlet_node(1.0)
+bndry_xout = dirichlet_node(1.0)
+
+[e]
+type = fixed_density, evolve_pressure
+AA = 1.0 / 1836.0
+charge = -1
+density = 1e19  # [m^-3]
+thermal_conduction = true
+diagnose = true
+
+[Pe]
+function = 1 + 0.3 * sin(6.283185307179586 * gridvar:Z - y) * sin(3.141592653589793 * (gridvar:R - 1))
+bndry_xin = dirichlet_node(1.0)
+bndry_xout = dirichlet_node(1.0)

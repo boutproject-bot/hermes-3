@@ -19,6 +19,12 @@ Some comments are present in the python script regarding some details of this sc
   <img src="Dommaschk_poincare.png" alt="Dommaschk grid">
 </p>
 
+The initial profile in the input file uses the grid variable `flux_label` (0 on the inner, 1 on the outer flux surface), read through `[input:grid_variables]`. `create_grid.py` writes it to new grid files. A grid file created before needs it added with
+```bash
+python ../dommaschk_label.py GRIDFILE
+```
+which adds (or overwrites) `flux_label` in one or more grid files with the 8 planes of this example.
+
 # Setting up the simulation
 Generally, Fci does work the same as the field-aligned version of the code. The only difference is (at this point in time, September 2026), that Fci **allways** needs a grid file. There is no built-in BOUT++ grid generation in the input file. Hermes-3 itself needs a few special compilation options to run with Fci, mainly compiling with 3D metrics and PETSC. A typical compilation command would look like
 ```bash

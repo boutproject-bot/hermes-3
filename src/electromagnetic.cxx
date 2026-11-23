@@ -1,4 +1,5 @@
 #include "../include/electromagnetic.hxx"
+#include "../include/hermes_utils.hxx"
 
 #include "../include/component.hxx"
 #include "../include/guarded_options.hxx"
@@ -31,6 +32,7 @@ Electromagnetic::Electromagnetic(std::string name, Options& alloptions, Solver* 
                       readOnly("time"), readOnly("species:{all_species}:AA"),
                       readOnly("species:{all_species}:density", Regions::Interior),
                       readWrite("fields:Apar")}) {
+  requireStructuredMesh("Component electromagnetic");
 
   Options& units = alloptions["units"];
   BoutReal Bnorm = units["Tesla"];

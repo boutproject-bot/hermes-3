@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+
+# Maximum principle for perpendicular diffusion on an unstructured FCI grid
+# with curved Dirichlet walls (gmsh annulus). The density must stay within
+# the wall values [0.1, 1] at every output (relative tolerance 1e-3), and
+# the profile must actually evolve.
+
+import sys
+from pathlib import Path
+
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+from numpy import abs, max, min
+
+shell("rm -f data/BOUT.dmp.*.nc")
+_, out = launch_safe("../../../hermes-3", nproc=1, pipe=True)
+Path("run.log").write_text(out)
+
+mxg = int(collect("MXG", path="data", info=False))
+N = collect("Nh+", path="data", info=False)[:, mxg:-mxg]
+lo, hi = min(N, axis=(1, 2, 3)), max(N, axis=(1, 2, 3))
+change = max(abs(N[-1] - N[0]))
+for t, (a, b) in enumerate(zip(lo, hi)):
+    print(f"output {t}: min {a:.6f} max {b:.6f}")
+print(f"Largest change of the profile: {change:.3f}")
+
+tol = 1e-3
+success = min(lo) >= 0.1 * (1 - tol) and max(hi) <= 1.0 * (1 + tol) and change > 0.05
+if success:
+    print(" => Test passed")
+    sys.exit(0)
+print(" => Test failed")
+sys.exit(1)

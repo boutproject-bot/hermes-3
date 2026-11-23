@@ -126,6 +126,9 @@ EvolveEnergy::EvolveEnergy(std::string name, Options& alloptions, Solver* solver
                            .doc("Include parallel heat conduction?")
                            .withDefault<bool>(true);
 
+  requireStructuredMesh("hyper_z", hyper_z > 0.);
+  requireStructuredMesh("neumann_boundary_average_z", neumann_boundary_average_z);
+
   substitutePermissions("name", {name});
   substitutePermissions("inputs", {"AA", "density", "velocity"});
   substitutePermissions("outputs", {"pressure", "temperature"});

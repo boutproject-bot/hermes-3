@@ -144,10 +144,13 @@ struct RateHelper {
 
     // Initialize result data structure
     RateData result(reactant_names);
-    result.rate = emptyFrom(*this->rate_params[0]);
+    // Rates are computed in the interior only; zero the guard cells so that
+    // nothing downstream (e.g. diagnostics, collision-time sums) reads
+    // uninitialised memory there
+    result.rate = zeroFrom(*this->rate_params[0]);
     for (std::size_t reactant_idx = 0; reactant_idx < this->reactant_names.size();
          ++reactant_idx) {
-      result.collision_frequencies[reactant_idx] = emptyFrom(*this->rate_params[0]);
+      result.collision_frequencies[reactant_idx] = zeroFrom(*this->rate_params[0]);
     }
 
     // Temporary storage for densities, rate and collision frequencies associated with a cell
