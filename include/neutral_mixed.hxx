@@ -8,6 +8,7 @@
 
 #include <bout/fv_ops.hxx>
 #include <bout/invert_laplace.hxx>
+#include <bout/yboundary_regions.hxx>
 
 #include "component.hxx"
 
@@ -73,6 +74,7 @@ private:
   Field3D grad_reg_visc_perp, grad_reg_visc_par; ///< Lagged gradients, viscosity caps
 
   bool sheath_ydown, sheath_yup;
+  bout::boundary::YBoundary sheath_boundary; ///< The targets where they apply
   bool zero_sheath_conductivity, zero_sheath_viscosity;
 
   BoutReal density_floor; ///< Minimum Nn used when dividing NVn by Nn to get Vn.

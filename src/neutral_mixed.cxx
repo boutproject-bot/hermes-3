@@ -105,6 +105,7 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                         sheath_ydown or sheath_yup);
   requireStructuredMesh("neutral_mixed:nonorthogonal_operators", nonorthogonal_operators);
   requireStructuredMesh("neutral_mixed:precondition", precondition);
+  sheath_boundary = bout::boundary::YBoundary(*mesh, sheath_ydown, sheath_yup);
   if (mesh->isUnstructured()) {
     dagp_op = FV::Div_a_Grad_perp_FCI::create(mesh, meters);
   }
@@ -501,58 +502,29 @@ void NeutralMixed::transform_impl(GuardedOptions& state) {
   // Parallel boundary conditions
   TRACE("Neutral boundary conditions");
 
-  if (sheath_ydown) {
-    for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
-      for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        // Free boundary (constant gradient) density
-        const BoutReal nnwall = std::max(
-            0.5 * (3. * Nn(r.ind, mesh->ystart, jz) - Nn(r.ind, mesh->ystart + 1, jz)),
-            0.0);
+  // On each point of the targets, current() is the cell next to the target,
+  // prev() the one before it and next() the boundary cell
+  sheath_boundary.iter([&](auto& pnt) {
+    // Free boundary (constant gradient) density
+    const BoutReal nnwall = std::max(0.5 * (3. * pnt.current(Nn) - pnt.prev(Nn)), 0.0);
 
-        const BoutReal tnwall = Tn(r.ind, mesh->ystart, jz);
+    const BoutReal tnwall = pnt.current(Tn);
 
-        Nn(r.ind, mesh->ystart - 1, jz) = 2 * nnwall - Nn(r.ind, mesh->ystart, jz);
+    pnt.next(Nn) = 2 * nnwall - pnt.current(Nn);
 
-        // Zero gradient temperature, heat flux added later
-        Tn(r.ind, mesh->ystart - 1, jz) = tnwall;
+    // Zero gradient temperature, heat flux added later
+    pnt.next(Tn) = tnwall;
 
-        // Set pressure consistent at the boundary
-        // Pn(r.ind, mesh->ystart - 1, jz) =
-        //     2. * nnwall * tnwall - Pn(r.ind, mesh->ystart, jz);
+    // Set pressure consistent at the boundary
+    // pnt.next(Pn) = 2. * nnwall * tnwall - pnt.current(Pn);
 
-        // Zero-gradient pressure
-        Pn(r.ind, mesh->ystart - 1, jz) = Pn(r.ind, mesh->ystart, jz);
+    // Zero-gradient pressure
+    pnt.next(Pn) = pnt.current(Pn);
 
-        // No flow into wall
-        Vn(r.ind, mesh->ystart - 1, jz) = -Vn(r.ind, mesh->ystart, jz);
-        NVn(r.ind, mesh->ystart - 1, jz) = -NVn(r.ind, mesh->ystart, jz);
-      }
-    }
-  }
-
-  if (sheath_yup) {
-    for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
-      for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        // Free boundary (constant gradient) density
-        const BoutReal nnwall = std::max(
-            0.5 * (3. * Nn(r.ind, mesh->yend, jz) - Nn(r.ind, mesh->yend - 1, jz)), 0.0);
-
-        const BoutReal tnwall = Tn(r.ind, mesh->yend, jz);
-
-        Nn(r.ind, mesh->yend + 1, jz) = 2 * nnwall - Nn(r.ind, mesh->yend, jz);
-
-        // Zero gradient temperature, heat flux added later
-        Tn(r.ind, mesh->yend + 1, jz) = tnwall;
-
-        // Zero-gradient pressure
-        Pn(r.ind, mesh->yend + 1, jz) = Pn(r.ind, mesh->yend, jz);
-
-        // No flow into wall
-        Vn(r.ind, mesh->yend + 1, jz) = -Vn(r.ind, mesh->yend, jz);
-        NVn(r.ind, mesh->yend + 1, jz) = -NVn(r.ind, mesh->yend, jz);
-      }
-    }
-  }
+    // No flow into wall
+    pnt.next(Vn) = -pnt.current(Vn);
+    pnt.next(NVn) = -pnt.current(NVn);
+  });
 
   // Set values in the state
   auto localstate = state["species"][name];
@@ -893,22 +865,7 @@ void NeutralMixed::finally(const Options& state) {
   // Override all diffusion coefficient BCs to be zero at targets if sheath is enabled.
   // Heat fluxes through the sheath are handled by the neutral_boundary component.
   auto zero_at_boundary = [&](Field3D& f) {
-    // ydown boundary
-    if (sheath_ydown) {
-      for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
-        for (int jz = 0; jz < mesh->LocalNz; jz++) {
-          f(r.ind, mesh->ystart - 1, jz) = -f(r.ind, mesh->ystart, jz);
-        }
-      }
-    }
-    // yup boundary
-    if (sheath_yup) {
-      for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
-        for (int jz = 0; jz < mesh->LocalNz; jz++) {
-          f(r.ind, mesh->yend + 1, jz) = -f(r.ind, mesh->yend, jz);
-        }
-      }
-    }
+    sheath_boundary.iter([&](auto& pnt) { pnt.next(f) = -pnt.current(f); });
   };
 
   zero_at_boundary(Dnn);
