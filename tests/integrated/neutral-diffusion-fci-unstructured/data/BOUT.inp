@@ -1,0 +1,42 @@
+# Neutral gas diffusing across closed flux tubes: no plasma, a fixed
+# collision frequency, and a density that varies only across the tubes.
+# ./runtest sets the mesh and the coordinate r below.
+
+nout = 2
+timestep = 1000
+
+[tube]
+r = 0  # Position across the flux tubes, 0 to 1
+
+[solver]
+type = pvode
+mxstep = 100000
+rtol = 1e-10
+atol = 1e-12
+
+[hermes]
+components = d
+Nnorm = 1e19  # Reference density [m^-3]
+Bnorm = 1     # Reference magnetic field [T]
+Tnorm = 50    # Reference temperature [eV]
+
+[d]
+type = neutral_mixed
+AA = 2
+collisionality_override = 0.01  # Dnn = (T / AA) / 0.01 in normalised units
+evolve_momentum = false
+neutral_conduction = false
+neutral_viscosity = false
+flux_limit = -1  # No flux limiters (./runtest also runs with them)
+diagnose = true
+# Closed flux tubes: no targets
+sheath_ydown = false
+sheath_yup = false
+
+[Nd]
+function = 1 + 0.5 * cos(pi * tube:r)
+bndry_all = neumann
+
+[Pd]
+function = `Nd`:function
+bndry_all = neumann

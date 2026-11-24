@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 
+#include <bout/fv_ops.hxx>
 #include <bout/invert_laplace.hxx>
 
 #include "component.hxx"
@@ -102,6 +103,17 @@ private:
   bool precon_laplacexy{false};   ///< Use LaplaceXY?
   bool lax_flux;                  ///< Use Lax flux for advection terms
   std::unique_ptr<Laplacian> inv; ///< Laplacian inversion used for preconditioning
+
+  /// Perpendicular operator of the grid file, on unstructured meshes only
+  std::shared_ptr<FV::Div_a_Grad_perp_FCI> dagp_op;
+
+  /// Div(a Grad_perp(f)) and the flows it produces
+  Field3D perpDiffusion(const Field3D& a, const Field3D& f, Field3D& flow_xlow,
+                        Field3D& flow_ylow) const;
+  /// Squared size of the perpendicular gradient of f, and of f's gradient divided
+  /// by @p scale, for the flux limiters
+  Field3D perpGradientSquared(const Field3D& f) const;
+  Field3D perpGradientSquared(const Field3D& f, const Field3D& scale) const;
 
   Field3D density_source, pressure_source, momentum_source; ///< External input source
   Field3D Sn, Sp, Snv; ///< Particle, pressure and momentum source

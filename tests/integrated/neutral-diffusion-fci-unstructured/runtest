@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+
+# Neutral gas (neutral_mixed) diffusing across closed flux tubes
+# (data/BOUT.inp) on an unstructured mesh in one poloidal plane: NR rows of
+# nodes at constant R, the first and the last on the walls, each a closed
+# flux tube of NZ nodes along Z. The density varies only across the tubes,
+# so the problem is one-dimensional in R. The perpendicular terms use the
+# grid file's operator.
+#
+# 1. Without flux limiters the problem is
+#      dN/dt = div(a_N grad ln P),         a_N = Dnn N = P / (AA nu)
+#      dP/dt = (5/3) div(a_P grad ln P),   a_P = Dnn P = P^2 / (N AA nu)
+#    with no flux through the walls. A fine one-dimensional finite-volume
+#    solution is the reference. The density averaged along each tube must
+#    converge to it at second order in the RMS over the tubes (measured
+#    1.96; the largest error moves between tubes, because the slab mesh
+#    splits its quads along randomly chosen diagonals). Those diagonals also
+#    make the density vary slightly along each tube, which is printed.
+# 2. With flux limiters (lower gradient floor, so that the gradient
+#    matters), the gradient the limiter used is recovered from the outputs
+#    at t = 0: 1/Dmax = 1/Dnn - 1/Dnn_unlimited, Dmax = 0.5 vbar / (4 g).
+#    Averaged along each tube it must match the gradient of ln P of the
+#    initial state (measured: within 1.3 % away from the walls; it varies
+#    by a few % along a tube). This checks the cell-averaged gradient the
+#    limiters use on unstructured meshes.
+
+import sys
+from pathlib import Path
+
+import numpy as np
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+from netCDF4 import Dataset
+from scipy.integrate import solve_ivp
+from scipy.sparse import bmat, diags
+from zoidberg.field import Slab
+from zoidberg.unstructured import UnstructuredPoloidalGrid, make_unstructured_grid
+
+RESOLUTIONS = (7, 13, 25)  # Rows of nodes across the tubes
+NZ = 8  # Nodes along each tube
+RC, LX, LY = 2.0, 1.0, 2.0 * np.pi
+R0 = RC - 0.5 * LX
+AA, NU = 2.0, 0.01  # As in data/BOUT.inp
+MIN_ORDER = 1.5
+# Limiter check: flux_limit and the gradient floor and ceiling [1/m]
+FLUX_LIMIT, FLOOR, CEILING = 0.5, 0.01, 100.0
+GRADIENT_TOLERANCE = 0.03  # Tube averages away from the walls (measured 1.3 %)
+
+
+def make_grid(nr):
+    h = LX / (nr - 1)
+    pol = UnstructuredPoloidalGrid.slab(
+        nr,
+        NZ,
+        LX,
+        NZ * h,
+        R0=R0,
+        Z0=0.5 * h,
+        jitter=0.0,
+        periodic_R=False,
+        periodic_Z=True,
+        relax=False,
+        r_on_walls=True,
+    )
+    grid = f"neutral_diffusion_{nr}.fci.nc"
+    field = Slab(By=1.0, Bz=h / LY, xcentre=RC, Bzprime=0.0)
+    make_unstructured_grid(grid, pol, field, ny=1, Ly=LY, k2=False)
+    return grid
+
+
+def run(name, grid, options=""):
+    path = Path(name)
+    path.mkdir(exist_ok=True)
+    path.joinpath("BOUT.inp").write_text(Path("data/BOUT.inp").read_text())
+    shell(f"rm -f {name}/BOUT.dmp.*.nc")
+    status, out = launch_safe(
+        f"../../../hermes-3 -d {name} mesh:file={grid} "
+        "mesh:paralleltransform:type=fci "
+        "mesh:paralleltransform:xzinterpolation:type=precomputed "
+        f"input:grid_variables:R=field3d 'tube:r=(gridvar:R-{R0})/{LX}' {options}",
+        nproc=1,
+        pipe=True,
+    )
+    path.joinpath("run.log").write_text(out)
+    if status:
+        print(f"{name}: run failed\n{out}")
+        sys.exit(1)
+
+
+def cells(name, var, grid, nr):
+    """`var` (t, node) on the evolving nodes, and the row of each node"""
+    f = np.asarray(collect(var, path=name, info=False, xguards=True, yguards=False))
+    with Dataset(grid) as g:
+        cell = np.asarray(g["cell_number"][:, 0, 0])
+        R = np.asarray(g["R"][:, 0, 0])
+    evolving = cell >= 0
+    row = np.rint((R[evolving] - R0) / (LX / (nr - 1))).astype(int)
+    return f[:, evolving, 0, 0], row
+
+
+def tube_mean(values, row, nr):
+    """Average along each tube: (..., node) -> (..., row)"""
+    return np.stack([values[..., row == i].mean(axis=-1) for i in range(nr)], axis=-1)
+
+
+def reference(length, t_end, m=2400):
+    """Fine node-centred finite-volume solution, nodes on the walls"""
+    r = np.linspace(0.0, length, m + 1)
+    h = length / m
+    volume = np.full(m + 1, h)
+    volume[[0, -1]] = 0.5 * h
+
+    def rhs(_t, y):
+        n, p = y[: m + 1], y[m + 1 :]
+        grad = np.diff(np.log(p)) / h
+        a_n = p / (AA * NU)
+        a_p = p * p / (n * AA * NU)
+        fluxes = []
+        for a in (a_n, a_p):
+            flux = 0.5 * (a[1:] + a[:-1]) * grad
+            change = np.zeros(m + 1)
+            change[:-1] += flux
+            change[1:] -= flux
+            fluxes.append(change / volume)
+        return np.concatenate([fluxes[0], (5.0 / 3) * fluxes[1]])
+
+    band = diags([1, 1, 1], [-1, 0, 1], shape=(m + 1, m + 1))
+    n0 = 1.0 + 0.5 * np.cos(np.pi * r / length)
+    solution = solve_ivp(
+        rhs,
+        (0.0, t_end),
+        np.concatenate([n0, n0]),
+        method="BDF",
+        rtol=1e-10,
+        atol=1e-12,
+        jac_sparsity=bmat([[band, band], [band, band]]),
+        t_eval=[t_end],
+    )
+    assert solution.success, solution.message
+    return r, n0, solution.y[: m + 1, -1]
+
+
+ok = True
+errors = []
+for nr in RESOLUTIONS:
+    grid = make_grid(nr)
+    name = f"unlimited_{nr}"
+    run(name, grid)
+    values, row = cells(name, "Nd", grid, nr)
+    n = tube_mean(values, row, nr)
+    spread = max(np.ptp(values[:, row == i], axis=1).max() for i in range(nr))
+    rho_s0 = float(collect("rho_s0", path=name, info=False))
+    t_end = float(np.asarray(collect("t_array", path=name, info=False))[-1])
+    r_ref, n0_ref, n_ref = reference(LX / rho_s0, t_end)
+    at_rows = np.rint(np.linspace(0, len(r_ref) - 1, nr)).astype(int)
+    change = np.max(np.abs(n_ref - n0_ref))
+    errors.append(np.sqrt(np.mean((n[-1] - n_ref[at_rows]) ** 2)) / change)
+    print(
+        f"{nr} rows: density change {change:.3f}, RMS difference from the "
+        f"reference {errors[-1]:.2e} of it, largest spread along a tube {spread:.1e}"
+    )
+orders = np.log2(np.array(errors[:-1]) / np.array(errors[1:]))
+print("orders of convergence (RMS):", ", ".join(f"{o:.2f}" for o in orders))
+ok = ok and orders[-1] > MIN_ORDER
+
+# Gradient used by the limiter, at t = 0 on the finest mesh
+nr = RESOLUTIONS[-1]
+grid = f"neutral_diffusion_{nr}.fci.nc"
+name = f"limited_{nr}"
+run(
+    name,
+    grid,
+    f"d:flux_limit={FLUX_LIMIT} d:limiter_gradient_floor={FLOOR} "
+    f"d:limiter_gradient_ceiling={CEILING}",
+)
+rho_s0 = float(collect("rho_s0", path=name, info=False))
+at_start = {var: cells(name, var, grid, nr)[0][0] for var in ("Dnnd", "Pd", "Nd")}
+dnn_unlimited, row = cells(name, "Dnnd_unlimited", grid, nr)
+vbar = np.sqrt(8.0 * (at_start["Pd"] / at_start["Nd"]) / (np.pi * AA))
+d_max = 1.0 / (1.0 / at_start["Dnnd"] - 1.0 / dnn_unlimited[0])
+g_limiter = tube_mean(FLUX_LIMIT * vbar / (4.0 * d_max), row, nr)
+r = np.linspace(0.0, 1.0, nr)
+grad = np.abs(
+    -0.5 * np.pi * np.sin(np.pi * r) / (1.0 + 0.5 * np.cos(np.pi * r)) / LX * rho_s0
+)
+gmin, gmax = FLOOR * rho_s0, CEILING * rho_s0
+expected = np.sqrt(grad**2 * gmax**2 / (grad**2 + gmax**2) + gmin**2)
+# Away from the walls: the dual cells on them are cut in half, and their
+# neighbours' averages reach them
+interior = slice(2, -2)
+mismatch = np.max(np.abs(g_limiter[interior] / expected[interior] - 1.0))
+print(f"limiter gradient against the gradient of ln P at t = 0: {mismatch:.2e}")
+ok = ok and mismatch < GRADIENT_TOLERANCE
+
+print(" => Test passed" if ok else " => Test failed")
+sys.exit(0 if ok else 1)

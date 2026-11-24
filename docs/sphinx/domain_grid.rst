@@ -140,13 +140,18 @@ energy sources.
 Components and options that use structured index-space stencils, boundary
 loops or Laplacian inversions stop with an error on unstructured grids: the
 components ``vorticity``, ``relax_potential``, ``electromagnetic``,
-``polarisation_drift``, ``diamagnetic_drift``, ``classical_diffusion`` and
-``neutral_mixed``; the species options ``low_n_diffuse_perp``,
+``polarisation_drift``, ``diamagnetic_drift`` and ``classical_diffusion``;
+the species options ``low_n_diffuse_perp``,
 ``low_p_diffuse_perp``, ``low_T_diffuse_perp``, ``hyper_z`` and
 ``hyper_z_T``; ``neumann_boundary_average_z`` (in the ``N<species>``,
 ``P<species>`` or ``E<species>`` sections);
-``braginskii_ion_viscosity:perpendicular``; and the recycling options
-``sol_recycle``, ``pfr_recycle``, ``neutral_pump`` and ``target_recycle``.
+``braginskii_ion_viscosity:perpendicular``; the recycling options
+``sol_recycle``, ``pfr_recycle``, ``neutral_pump`` and ``target_recycle``;
+and the ``neutral_mixed`` options ``sheath_ydown`` and ``sheath_yup`` (on by
+default), ``nonorthogonal_operators`` and ``precondition``. ``neutral_mixed``
+itself runs: its perpendicular terms use the grid file's operator, and its
+flux limiters the cell-averaged gradient from that operator's flux vector.
+Without the sheath options it suits closed flux tubes for now.
 Jacobian colouring (e.g. ``solver:type = beuler`` with
 ``solver:use_coloring = true``) is not supported either. ExB advection is
 not implemented: it gives a warning, the X-Z flow is zero and
