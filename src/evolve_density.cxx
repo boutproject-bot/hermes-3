@@ -72,6 +72,11 @@ EvolveDensity::EvolveDensity(std::string name, Options& alloptions, Solver* solv
                     .doc("Lax flux in the parallel advection in Fci?")
                     .withDefault<bool>(mesh->isFci());
 
+  fci_reconstruct = options["fci_reconstruct"]
+                        .doc("Limited reconstruction in the parallel advection in Fci, "
+                             "as on field-aligned grids?")
+                        .withDefault<bool>(false);
+
   if (evolve_log) {
     // Evolve logarithm of density
     solver->add(logN, std::string("logN") + name);
@@ -293,7 +298,7 @@ void EvolveDensity::finally(const Options& state) {
     }
 
     ddt(N) -= FV::Div_par_mod<hermes::Limiter>(N, V, fastest_wave, flow_ylow, true,
-                                               dissipative);
+                                               dissipative, fci_reconstruct);
 
     if (state.isSection("fields") and state["fields"].isSet("Apar_flutter")) {
       // Magnetic flutter term

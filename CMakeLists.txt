@@ -549,6 +549,11 @@ if(HERMES_TESTS)
   hermes_add_integrated_test(
     wall-hits-fci-unstructured REQUIRES BOUT_USE_METRIC_3D BOUT_HAS_PETSC
     zoidberg_unstructured_FOUND)
+  # A field-aligned mesh stored as an unstructured grid, against the same
+  # cells on a structured field-aligned mesh
+  hermes_add_integrated_test(
+    field-aligned-fci-unstructured REQUIRES BOUT_USE_METRIC_3D BOUT_HAS_PETSC
+    zoidberg_unstructured_FOUND)
   # Insulating walls: perpendicular transport keeps particles and energy
   hermes_add_integrated_test(
     insulating-walls-fci-unstructured REQUIRES BOUT_USE_METRIC_3D

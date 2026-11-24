@@ -68,6 +68,11 @@ EvolvePressure::EvolvePressure(std::string name, Options& alloptions, Solver* so
                     .doc("Lax flux in the parallel advection in Fci?")
                     .withDefault<bool>(mesh->isFci());
 
+  fci_reconstruct = options["fci_reconstruct"]
+                        .doc("Limited reconstruction in the parallel advection in Fci, "
+                             "as on field-aligned grids?")
+                        .withDefault<bool>(false);
+
   if (evolve_log) {
     // Evolve logarithm of pressure
     solver->add(logP, std::string("logP") + name);
@@ -303,7 +308,7 @@ void EvolvePressure::finally(const Options& state) {
     if (p_div_v) {
       // Use the P * Div(V) form
       ddt(P) -= FV::Div_par_mod<hermes::Limiter>(P, V, fastest_wave, flow_ylow_advection,
-                                                 true, dissipative);
+                                                 true, dissipative, fci_reconstruct);
 
       // Work done. This balances energetically a term in the momentum equation
       E_PdivV = -Pfloor * Div_par(V.asField3DParallel());
@@ -314,9 +319,10 @@ void EvolvePressure::finally(const Options& state) {
       // Note: A mixed form has been tried (on 1D neon example)
       //       -(4/3)*FV::Div_par(P,V) + (1/3)*(V * Grad_par(P) - P * Div_par(V))
       //       Caused heating of charged species near sheath like p_div_v
-      ddt(P) -= (5. / 3)
-                * FV::Div_par_mod<hermes::Limiter>(
-                    P, V, fastest_wave, flow_ylow_advection, true, dissipative);
+      ddt(P) -=
+          (5. / 3)
+          * FV::Div_par_mod<hermes::Limiter>(P, V, fastest_wave, flow_ylow_advection,
+                                             true, dissipative, fci_reconstruct);
       E_VgradP = V * Grad_par(P.asField3DParallel());
       ddt(P) += (2. / 3) * E_VgradP;
     }

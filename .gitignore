@@ -52,6 +52,7 @@ tests/integrated/*-fci-unstructured*/data/
 !tests/integrated/reference-input-fci-unstructured/data/
 !tests/integrated/wall-hits-fci-unstructured/data/
 !tests/integrated/insulating-walls-fci-unstructured/data/
+!tests/integrated/field-aligned-fci-unstructured/data/
 
 # Generated at run time by tests/integrated/1D-golden-answer-fci{,-unstructured}/runtest
 tests/integrated/1D-golden-answer-fci/balance*/
@@ -64,6 +65,11 @@ tests/integrated/reference-input-fci-unstructured/unstructured/
 # Generated at run time by tests/integrated/wall-hits-fci-unstructured/runtest
 tests/integrated/wall-hits-fci-unstructured/structured/
 tests/integrated/wall-hits-fci-unstructured/unstructured/
+
+# Generated at run time by tests/integrated/field-aligned-fci-unstructured/runtest
+tests/integrated/field-aligned-fci-unstructured/structured/
+tests/integrated/field-aligned-fci-unstructured/unstructured/
+tests/integrated/field-aligned-fci-unstructured/unstructured_first_order/
 
 # Generated at run time by tests/integrated/insulating-walls-fci-unstructured/runtest
 tests/integrated/insulating-walls-fci-unstructured/insulating/

@@ -80,6 +80,11 @@ EvolveMomentum::EvolveMomentum(std::string name, Options& alloptions, Solver* so
           .doc("Fix Y boundary momentum flux to boundary midpoint value?")
           .withDefault<bool>(false);
 
+  fci_reconstruct = options["fci_reconstruct"]
+                        .doc("Limited reconstruction in the parallel advection in Fci, "
+                             "as on field-aligned grids?")
+                        .withDefault<bool>(false);
+
   requireStructuredMesh("low_n_diffuse_perp", low_n_diffuse_perp);
   requireStructuredMesh("low_p_diffuse_perp", low_p_diffuse_perp);
   requireStructuredMesh("hyper_z", hyper_z > 0.);
@@ -212,8 +217,8 @@ void EvolveMomentum::finally(const Options& state) {
   //  - using the same operator as in density and pressure equations doesn't work
   if (use_div_par_fvv) {
     ddt(NV) -= AA
-               * FV::Div_par_fvv<hermes::Limiter>(Nlim, V, fastest_wave,
-                                                  fix_momentum_boundary_flux);
+               * FV::Div_par_fvv<hermes::Limiter>(
+                   Nlim, V, fastest_wave, fix_momentum_boundary_flux, fci_reconstruct);
   } else {
     ddt(NV) -= Div_par(NV * V);
   }

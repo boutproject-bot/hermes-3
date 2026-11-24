@@ -357,6 +357,15 @@ The divergence of the flux, and so the rate of change of :math:`f` in cell
 
    \nabla\cdot\left(\mathbf{b} f v_{||}\right)_{i} = \frac{1}{V_i}\left[\frac{A_{i} + A_{i+1}}{2}\Gamma_{f, i+1/2} - \frac{A_{i-1} + A_{i}}{2}\Gamma_{f, i-1/2}\right]
 
+On FCI grids the parallel advection uses by default the average of each cell
+and its neighbours along the field line instead of this reconstruction, with
+a first-order Lax flux (``dissipative``). The species option
+``fci_reconstruct = true`` (default false) selects the fluxes above on FCI
+grids too, with the neighbours along the field line in the place of cells
+:math:`i \pm 1`. On a grid whose field-line maps connect each cell to the
+next cell of its flux tube, the result is that of the field-aligned
+operators on the same cells (test ``field-aligned-fci-unstructured``).
+
 .. _sec-slope-limiter-settings:
 
 Selecting slope limiter and conduction method
