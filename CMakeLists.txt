@@ -315,10 +315,10 @@ if(HERMES_TESTS)
         "import importlib.util as u; exit(u.find_spec('zoidberg.unstructured') is None)"
       RESULT_VARIABLE zoidberg_unstructured_missing
       OUTPUT_QUIET ERROR_QUIET)
-    # Grids with curved walls are meshed with gmsh
+    # Grids with curved walls are meshed with gmsh. Importing it also loads its
+    # library, which fails if system libraries such as libGLU are missing.
     execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} -c
-              "import importlib.util as u; exit(u.find_spec('gmsh') is None)"
+      COMMAND ${PYTHON_EXECUTABLE} -c "import gmsh"
       RESULT_VARIABLE gmsh_missing
       OUTPUT_QUIET ERROR_QUIET)
     if(gmsh_missing EQUAL 0)
@@ -326,7 +326,9 @@ if(HERMES_TESTS)
     else()
       set(gmsh_FOUND OFF)
       message(
-        STATUS "gmsh not found: skipping unstructured tests with curved walls")
+        STATUS
+          "gmsh cannot be imported: skipping unstructured tests with curved walls"
+      )
     endif()
     if(zoidberg_unstructured_missing EQUAL 0)
       set(zoidberg_unstructured_FOUND ON)
