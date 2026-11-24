@@ -147,10 +147,11 @@ components ``vorticity``, ``relax_potential``, ``electromagnetic``,
 ``P<species>`` or ``E<species>`` sections);
 ``braginskii_ion_viscosity:perpendicular``; and the recycling options
 ``sol_recycle``, ``pfr_recycle``, ``neutral_pump`` and ``target_recycle``.
-Jacobian colouring (e.g. ``solver:type = beuler`` with
-``solver:use_coloring = true``) is not supported either. ExB advection is
-not implemented: it gives a warning, the X-Z flow is zero and
-``poloidal_flows = true`` fails.
+ExB advection is not implemented: it gives a warning, the X-Z flow is zero
+and ``poloidal_flows = true`` fails. Jacobian colouring (e.g.
+``solver:type = beuler`` with ``solver:use_coloring = true``) takes its
+pattern from the operators in the grid file (BOUT++ option
+``solver:stencil:parallel_hops``).
 
 **Note** The top-level option ``use_petsc_operator = true`` was removed; set
 the top-level option ``conduction_method = petscoperator`` instead.
