@@ -50,6 +50,7 @@ private:
 
   bool diagnose;                   ///< Output additional diagnostics?
   bool fix_momentum_boundary_flux; ///< Fix momentum flux to boundary condition?
+  bool fci_reconstruct;            ///< Limited reconstruction for Fci
   Field3D flow_xlow, flow_ylow;    ///< Momentum flow diagnostics
 
   /// This takes as inputs

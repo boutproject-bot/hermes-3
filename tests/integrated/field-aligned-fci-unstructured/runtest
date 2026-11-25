@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+
+# Flux tubes that close on themselves (data/BOUT.inp), on a field-aligned
+# structured mesh and on the same cells stored as an unstructured list: six
+# tubes at constant R, each with 32 cells along Z, in one poloidal plane
+# (ny = 1). The field has a Z component such that one turn in y moves a field
+# line by exactly one cell, so the parallel maps of the unstructured grid are
+# exact: each cell is connected to the next cell of its tube.
+#
+# With fci_reconstruct the parallel advection on the unstructured grid uses
+# the fluxes of the field-aligned operators. The two runs must then have the
+# same time derivatives of the initial state and the same state at the end.
+# Without the option the time derivatives must differ, which shows that the
+# comparison can fail.
+
+import sys
+from pathlib import Path
+
+import netCDF4
+import numpy as np
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+from zoidberg.field import Slab
+from zoidberg.unstructured import UnstructuredPoloidalGrid, make_unstructured_grid
+
+NR, NZ = 6, 32
+RC, LX, LY = 2.0, 1.0, 2.0 * np.pi
+LZ = NZ * LX / NR  # Square cells in the poloidal plane
+HZ = LZ / NZ
+PITCH = HZ / LY  # B_Z / B_y
+R0, Z0 = RC - 0.5 * LX, 0.5 * HZ  # Z0: centre of the first cell of a tube
+GRID = "field_aligned_unstructured.fci.nc"
+
+VARIABLES = ("Nh+", "NVh+", "Ph+", "Pe")
+# Measured: time derivatives 1e-14 (1.4e-12 for NVh+), final state 6e-9 (the
+# solver tolerance is 1e-10)
+DDT_TOL = 1e-10
+STATE_TOL = 1e-7
+# Measured without fci_reconstruct: 0.12 to 0.44
+DDT_DIFFERENT = 0.05
+
+
+def make_unstructured():
+    pol = UnstructuredPoloidalGrid.slab(
+        NR,
+        NZ,
+        LX,
+        LZ,
+        R0=R0,
+        Z0=Z0,
+        jitter=0.0,
+        periodic_R=False,
+        periodic_Z=True,
+        relax=False,
+    )
+    make_unstructured_grid(
+        GRID,
+        pol,
+        Slab(By=1.0, Bz=PITCH, xcentre=RC, Bzprime=0.0),
+        ny=1,
+        Ly=LY,
+        k2=False,
+    )
+
+
+def run(name, options):
+    path = Path(name)
+    path.mkdir(exist_ok=True)
+    path.joinpath("BOUT.inp").write_text(Path("data/BOUT.inp").read_text())
+    shell(f"rm -f {name}/BOUT.dmp.*.nc")
+    status, out = launch_safe(
+        f"../../../hermes-3 -d {name} {options}", nproc=1, pipe=True
+    )
+    path.joinpath("run.log").write_text(out)
+    if status:
+        print(f"{name}: run failed\n{out}")
+        sys.exit(1)
+
+
+def tubes(name, var, unstructured):
+    """Time history of `var` as (t, tube, cell along the tube)"""
+    f = np.asarray(
+        collect(var, path=name, info=False, xguards=unstructured, yguards=False)
+    )
+    if not unstructured:
+        return f[..., 0]
+    with netCDF4.Dataset(GRID) as g:
+        cell = np.asarray(g["cell_number"][:, 0, 0])
+        R, Z = np.asarray(g["R"][:, 0, 0]), np.asarray(g["Z"][:, 0, 0])
+    evolving = cell >= 0
+    i = np.rint((R[evolving] - R0) / (LX / NR) - 0.5).astype(int)
+    k = np.rint((Z[evolving] - Z0) / HZ).astype(int)
+    result = np.full((f.shape[0], NR, NZ), np.nan)
+    result[:, i, k] = f[:, evolving, 0, 0]
+    assert np.all(np.isfinite(result))
+    return result
+
+
+def difference(a, b):
+    return np.max(abs(a - b)) / np.max(abs(a))
+
+
+make_unstructured()
+
+# Parallel length of a cell: one turn in y along the field line
+dl = LY * np.sqrt(1.0 + PITCH**2)
+run(
+    "structured",
+    f"MXG=1 MYG=2 mesh:nx={NR + 2} mesh:ny={NZ} mesh:nz=1 mesh:dx={LX / NR} "
+    f"mesh:dy={dl} mesh:dz=1 mesh:J=1 mesh:g22=1 mesh:Bxy=1 "
+    f"mesh:ixseps1={NR + 2} mesh:ixseps2={NR + 2} "
+    "mesh:paralleltransform:type=identity tube:s=y tube:r=x",
+)
+unstructured = (
+    f"mesh:file={GRID} mesh:paralleltransform:type=fci "
+    "mesh:paralleltransform:xzinterpolation:type=precomputed "
+    "input:grid_variables:R=field3d input:grid_variables:Z=field3d "
+    f"'tube:s=2*pi*gridvar:Z/{LZ}' 'tube:r=(gridvar:R-{R0})/{LX}' "
+)
+run("unstructured", unstructured + "h+:fci_reconstruct=true e:fci_reconstruct=true")
+run("unstructured_first_order", unstructured)
+
+ok = True
+for var in VARIABLES:
+    s = tubes("structured", var, False)
+    u = tubes("unstructured", var, True)
+    start, end = difference(s[0], u[0]), difference(s[-1], u[-1])
+    s_ddt = tubes("structured", f"ddt({var})", False)[0]
+    ddt = difference(s_ddt, tubes("unstructured", f"ddt({var})", True)[0])
+    first_order = difference(
+        s_ddt, tubes("unstructured_first_order", f"ddt({var})", True)[0]
+    )
+    print(
+        f"{var}: relative difference of the initial state {start:.1e}, of its time "
+        f"derivative {ddt:.1e} (without fci_reconstruct {first_order:.2f}), of the "
+        f"final state {end:.1e}"
+    )
+    ok = ok and start < 1e-13 and ddt < DDT_TOL and end < STATE_TOL
+    ok = ok and first_order > DDT_DIFFERENT
+
+if ok:
+    print(" => Test passed")
+    sys.exit(0)
+print(" => Test failed")
+sys.exit(1)
