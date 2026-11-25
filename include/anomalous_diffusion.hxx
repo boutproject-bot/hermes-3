@@ -42,6 +42,9 @@ private:
 
   std::shared_ptr<FV::Div_a_Grad_perp_FCI> dagp_op; ///< Perp. diffusion operator for Fci
 
+  /// Unstructured meshes: flows into the side walls per unit volume (diagnostics)
+  Field3D particle_flow_wall, energy_flow_wall;
+
   /// Inputs
   /// - species
   ///   - <name>
@@ -57,6 +60,8 @@ private:
   ///     - density_source
   ///     - momentum_source
   ///     - energy_source
+  ///     - particle_flow_wall, energy_flow_wall (unstructured meshes: the
+  ///       flows into the side walls per unit volume of the cell they leave)
   ///
   void transform_impl(GuardedOptions& state) override;
 };
