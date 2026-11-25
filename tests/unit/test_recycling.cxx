@@ -18,8 +18,12 @@ using namespace bout::globals;
 
 #include <bout/field_factory.hxx> // For generating functions
 
-// Reuse the "standard" fixture for FakeMesh
-using RecyclingTest = FakeMeshFixture;
+// The "standard" fixture for FakeMesh, with the targets that target recycling
+// finds through BOUT++'s y boundary iterator
+class RecyclingTest : public FakeMeshFixture {
+public:
+  RecyclingTest() { static_cast<FakeMesh*>(bout::globals::mesh)->createTargets(); }
+};
 
 // Increase velocity, pressure and temperature
 // and check that recycled density and energy sources increase
