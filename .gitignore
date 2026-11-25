@@ -60,6 +60,10 @@ tests/integrated/*-fci-unstructured*/data/
 tests/integrated/1D-golden-answer-fci/balance*/
 tests/integrated/1D-golden-answer-fci-unstructured/balance*/
 
+# Generated at run time by tests/integrated/neutral-mixed-fci/runtest
+tests/integrated/neutral-mixed-fci/neutral_mixed/
+tests/integrated/neutral-mixed-fci/with_neutral_boundary/
+
 # Generated at run time by tests/integrated/reference-input-fci-unstructured/runtest
 tests/integrated/reference-input-fci-unstructured/structured/
 tests/integrated/reference-input-fci-unstructured/unstructured/

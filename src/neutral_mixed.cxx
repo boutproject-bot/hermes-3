@@ -98,13 +98,14 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                      .doc("Enable preconditioning in neutral model?")
                      .withDefault<bool>(false);
 
-  // Unstructured FCI meshes: the perpendicular terms use the grid file's
-  // operator. The nonorthogonal operators and the preconditioner work in
-  // structured index space.
+  // FCI meshes: the perpendicular terms use the FCI operator, as in
+  // anomalous_diffusion (on unstructured meshes the grid file's operator).
+  // The nonorthogonal operators and the preconditioner work in structured
+  // index space.
   requireStructuredMesh("neutral_mixed:nonorthogonal_operators", nonorthogonal_operators);
   requireStructuredMesh("neutral_mixed:precondition", precondition);
   sheath_boundary = bout::boundary::YBoundary(*mesh, sheath_ydown, sheath_yup);
-  if (mesh->isUnstructured()) {
+  if (mesh->isFci()) {
     dagp_op = FV::Div_a_Grad_perp_FCI::create(mesh, meters);
   }
 
@@ -440,8 +441,8 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
 Field3D NeutralMixed::perpDiffusion(const Field3D& a, const Field3D& f,
                                     Field3D& flow_xlow, Field3D& flow_ylow) const {
   if (dagp_op) {
-    // Unstructured mesh: the flows are the R and Z components of the
-    // cell-averaged flux vector
+    // FCI mesh. On unstructured meshes the flows are the R and Z components
+    // of the cell-averaged flux vector
     return (*dagp_op)(a, f, flow_xlow, flow_ylow, false);
   }
   if (nonorthogonal_operators) {
@@ -451,7 +452,7 @@ Field3D NeutralMixed::perpDiffusion(const Field3D& a, const Field3D& f,
 }
 
 Field3D NeutralMixed::perpGradientSquared(const Field3D& f) const {
-  if (dagp_op) {
+  if (mesh->isUnstructured()) {
     // Cell-averaged gradient in the poloidal plane: the flux vector of the
     // grid file's operator with a = 1
     Field3D grad_R;
@@ -459,12 +460,13 @@ Field3D NeutralMixed::perpGradientSquared(const Field3D& f) const {
     (*dagp_op)(Field3D{1.0, f.getMesh()}, f, grad_R, grad_Z, false);
     return grad_R * grad_R + grad_Z * grad_Z;
   }
+  // On structured FCI meshes f must have its parallel slices
   const Vector3D g = Grad_perp(f);
   return g * g;
 }
 
 Field3D NeutralMixed::perpGradientSquared(const Field3D& f, const Field3D& scale) const {
-  if (dagp_op) {
+  if (mesh->isUnstructured()) {
     Field3D grad_R;
     Field3D grad_Z;
     (*dagp_op)(Field3D{1.0, f.getMesh()}, f, grad_R, grad_Z, false);
@@ -570,9 +572,12 @@ void NeutralMixed::finally(const Options& state) {
                         : softFloor(Nn, density_floor);
   // Tnlim used where positivity of Tn is required
   const Field3D Tnlim = softFloor(Tn, temperature_floor);
-  // Pnlim used where positivity of Pn is required
-  Pnlim = softFloor(Pn, pressure_floor);
-  logPnlim = log(Pnlim);
+  // Pnlim used where positivity of Pn is required. On FCI meshes Pnlim and
+  // logPnlim keep the parallel slices, which Grad_perp needs on structured
+  // FCI meshes (limiters)
+  Pnlim = mesh->isFci() ? softFloor(Field3DParallel{Pn}, pressure_floor)
+                        : softFloor(Pn, pressure_floor);
+  logPnlim = mesh->isFci() ? Field3D{Field3DParallel{log(Pnlim)}} : Field3D{log(Pnlim)};
   logPnlim.applyBoundary();
   ///////////////////////////////////////////////////////
   // Calculate cross-field diffusion from collision frequency

@@ -496,6 +496,7 @@ if(HERMES_TESTS)
   hermes_add_integrated_test(2D-fluid-anomalous-fci REQUIRES BOUT_USE_METRIC_3D)
   hermes_add_integrated_test(1D-conduction-fci REQUIRES BOUT_USE_METRIC_3D)
   hermes_add_integrated_test(1D-golden-answer-fci REQUIRES BOUT_USE_METRIC_3D)
+  hermes_add_integrated_test(neutral-mixed-fci REQUIRES BOUT_USE_METRIC_3D)
 
   # Unstructured-mesh counterparts of the FCI MMS tests
   foreach(
