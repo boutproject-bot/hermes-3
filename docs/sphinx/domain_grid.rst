@@ -156,10 +156,11 @@ its target conditions (and those of ``neutral_boundary``) set the parallel
 slices at the parallel boundaries. Target recycling (``target_recycle``)
 returns the ion flux through each target face, with the face area of the
 FCI metric, as neutrals in the cell next to the target.
-Jacobian colouring (e.g. ``solver:type = beuler`` with
-``solver:use_coloring = true``) is not supported either. ExB advection is
-not implemented: it gives a warning, the X-Z flow is zero and
-``poloidal_flows = true`` fails.
+ExB advection is not implemented: it gives a warning, the X-Z flow is zero
+and ``poloidal_flows = true`` fails. Jacobian colouring (e.g.
+``solver:type = beuler`` with ``solver:use_coloring = true``) takes its
+pattern from the operators in the grid file (BOUT++ option
+``solver:stencil:parallel_hops``).
 
 **Note** The top-level option ``use_petsc_operator = true`` was removed; set
 the top-level option ``conduction_method = petscoperator`` instead.

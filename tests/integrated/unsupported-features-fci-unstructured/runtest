@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 # Components and options that use structured (index-space) perpendicular
-# operators, boundary loops, Laplacian inversions or Jacobian colouring
-# must stop with a clear error on unstructured FCI grids instead of giving
-# silently wrong results. Also checks that the base input runs and that an
-# expression in the index coordinate x stops (and only warns with
+# operators, boundary loops or Laplacian inversions must stop with a clear
+# error on unstructured FCI grids instead of giving silently wrong results.
+# Also checks that the base input runs, also with Jacobian colouring, and
+# that an expression in the index coordinate x stops (and only warns with
 # input:allow_index_coordinates = true).
 
 import sys
@@ -13,7 +13,6 @@ from pathlib import Path
 from boututils.run_wrapper import launch, shell
 
 GUARD = "is not supported on unstructured FCI grids"
-COLOURING = "Jacobian colouring is not supported on unstructured meshes"
 INDEX_COORDINATE = "uses the index coordinate x or z on an unstructured mesh"
 # Only in the error, not in the warning
 INDEX_ERROR = "or set input:allow_index_coordinates = true"
@@ -95,9 +94,10 @@ CASES = [
     ("ordinary x boundary at wall nodes", "Nh+:bndry_xin=neumann", True, WALL_NODES),
     (
         "Jacobian colouring (SNES backward Euler)",
-        "solver:type=beuler solver:use_coloring=true",
-        True,
-        COLOURING,
+        # solver:mxstep in data/BOUT.inp is a PVODE option
+        "solver:type=beuler solver:use_coloring=true input:error_on_unused_options=false",
+        False,
+        None,
     ),
 ]
 
