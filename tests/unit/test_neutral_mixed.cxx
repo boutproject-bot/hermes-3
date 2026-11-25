@@ -20,8 +20,12 @@ extern Mesh* mesh;
 // The unit tests use the global mesh
 using namespace bout::globals;
 
-// Reuse the "standard" fixture for FakeMesh
-using NeutralMixedTest = FakeMeshFixture;
+// The "standard" fixture for FakeMesh, with the targets that the sheath
+// conditions find through BOUT++'s y boundary iterator
+class NeutralMixedTest : public FakeMeshFixture {
+public:
+  NeutralMixedTest() { static_cast<FakeMesh*>(bout::globals::mesh)->createTargets(); }
+};
 // Component test checking only that the state
 // includes Nd, Pd, NVd as evolved variables.
 TEST_F(NeutralMixedTest, CreateComponent) {
@@ -860,6 +864,10 @@ TEST_F(NeutralMixedTest, SeparateCoefficientsZeroedAtSheath) {
 // Conductivity and viscosity are not zeroed at sheath.
 // Combined limiters
 TEST_F(NeutralMixedTest, CombinedCoefficientsNotZeroedAtSheath) {
+  // Boundary conditions apply at the targets too (Dirichlet zero by default,
+  // which Dnn would pass on to the combined coefficients): Neumann, so that
+  // only the sheath zeroing could make the coefficients negative there
+  Options::root()["all"]["bndry_all"] = "neumann";
 
   Options out = runNeutralMixedTest({{"d",
                                       {{"type", "neutral_mixed"},
@@ -883,6 +891,8 @@ TEST_F(NeutralMixedTest, CombinedCoefficientsNotZeroedAtSheath) {
 // Conductivity and viscosity are not zeroed at sheath.
 // Separate limiters
 TEST_F(NeutralMixedTest, SeparateCoefficientsNotZeroedAtSheath) {
+  // Neumann conditions at the targets, as in the test above
+  Options::root()["all"]["bndry_all"] = "neumann";
 
   Options out = runNeutralMixedTest({{"d",
                                       {{"type", "neutral_mixed"},
