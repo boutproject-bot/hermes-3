@@ -99,10 +99,8 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                      .withDefault<bool>(false);
 
   // Unstructured FCI meshes: the perpendicular terms use the grid file's
-  // operator. The target sheath loops, the nonorthogonal operators and the
-  // preconditioner work in structured index space.
-  requireStructuredMesh("neutral_mixed:sheath_ydown and sheath_yup",
-                        sheath_ydown or sheath_yup);
+  // operator. The nonorthogonal operators and the preconditioner work in
+  // structured index space.
   requireStructuredMesh("neutral_mixed:nonorthogonal_operators", nonorthogonal_operators);
   requireStructuredMesh("neutral_mixed:precondition", precondition);
   sheath_boundary = bout::boundary::YBoundary(*mesh, sheath_ydown, sheath_yup);
@@ -482,19 +480,29 @@ void NeutralMixed::transform_impl(GuardedOptions& state) {
 
   mesh->communicate(Nn, Pn, NVn);
 
-  Nn.clearParallelSlices();
-  Pn.clearParallelSlices();
-  NVn.clearParallelSlices();
+  // On FCI meshes the parallel operators need the parallel slices: keep
+  // them through the arithmetic below, and the sheath conditions further
+  // down set their values at the targets
+  const bool fci = mesh->isFci();
+  const auto with_slices = [fci](const auto& f) -> Field3D {
+    return fci ? Field3D{Field3DParallel{f}} : Field3D{f};
+  };
+  if (not fci) {
+    Nn.clearParallelSlices();
+    Pn.clearParallelSlices();
+    NVn.clearParallelSlices();
+  }
 
-  Nn = floor(Nn, 0.0);
-  Pn = floor(Pn, 0.0);
+  Nn = with_slices(floor(Nn, 0.0));
+  Pn = with_slices(floor(Pn, 0.0));
 
   // Nnlim Used where division by neutral density is needed
-  Nnlim = softFloor(Nn, density_floor);
-  Tn = Pn / Nnlim;
+  Nnlim =
+      fci ? softFloor(Field3DParallel{Nn}, density_floor) : softFloor(Nn, density_floor);
+  Tn = with_slices(Pn / Nnlim);
   Tn.applyBoundary();
 
-  Vn = NVn / (AA * Nnlim);
+  Vn = with_slices(NVn / (AA * Nnlim));
   Vn.applyBoundary();
   NVn.applyBoundary();
 
@@ -556,18 +564,16 @@ void NeutralMixed::finally(const Options& state) {
   // Field3D logNn = log(Nn);
   // Field3D logTn = log(Tn);
 
-  // Nnlim Used where division by neutral density is needed
-  Nnlim = softFloor(Nn, density_floor);
+  // Nnlim Used where division by neutral density is needed. On FCI meshes
+  // with the parallel slices of Nn (from the state, with the sheath values)
+  Nnlim = mesh->isFci() ? softFloor(Field3DParallel{Nn}, density_floor)
+                        : softFloor(Nn, density_floor);
   // Tnlim used where positivity of Tn is required
   const Field3D Tnlim = softFloor(Tn, temperature_floor);
   // Pnlim used where positivity of Pn is required
   Pnlim = softFloor(Pn, pressure_floor);
   logPnlim = log(Pnlim);
   logPnlim.applyBoundary();
-  if (mesh->isFci()) {
-    // Parallel slices for the parallel operators
-    mesh->communicate(Nn, Pn, Tn, Vn, Nnlim);
-  }
   ///////////////////////////////////////////////////////
   // Calculate cross-field diffusion from collision frequency
   //
@@ -836,8 +842,12 @@ void NeutralMixed::finally(const Options& state) {
   kappa_n_perp.clearParallelSlices();
   kappa_n_perp.applyBoundary();
 
+  // The parallel coefficients keep their parallel slices on FCI meshes, for
+  // the parallel operators and their values at the targets
   mesh->communicate(kappa_n_par);
-  kappa_n_par.clearParallelSlices();
+  if (not mesh->isFci()) {
+    kappa_n_par.clearParallelSlices();
+  }
   kappa_n_par.applyBoundary();
 
   mesh->communicate(eta_n_unlimited);
@@ -849,7 +859,9 @@ void NeutralMixed::finally(const Options& state) {
   eta_n_perp.applyBoundary();
 
   mesh->communicate(eta_n_par);
-  eta_n_par.clearParallelSlices();
+  if (not mesh->isFci()) {
+    eta_n_par.clearParallelSlices();
+  }
   eta_n_par.applyBoundary();
 
   // Neutral diffusion parameters have the same boundary condition as Dnn
@@ -868,20 +880,32 @@ void NeutralMixed::finally(const Options& state) {
     sheath_boundary.iter([&](auto& pnt) { pnt.next(f) = -pnt.current(f); });
   };
 
-  zero_at_boundary(Dnn);
-  zero_at_boundary(DnnNn);
-  zero_at_boundary(DnnPn);
-  zero_at_boundary(DnnNVn);
+  // On FCI meshes the perpendicular operators work within the poloidal
+  // planes and do not reach the targets: only the parallel coefficients
+  // need values there
+  const bool structured = not mesh->isFci();
+  if (structured) {
+    zero_at_boundary(Dnn);
+    zero_at_boundary(DnnNn);
+    zero_at_boundary(DnnPn);
+    zero_at_boundary(DnnNVn);
+  }
 
   if (zero_sheath_conductivity) {
-    zero_at_boundary(kappa_n_unlimited);
+    if (structured) {
+      zero_at_boundary(kappa_n_unlimited);
+    }
     zero_at_boundary(kappa_n_par);
-    zero_at_boundary(kappa_n_perp);
+    if (structured) {
+      zero_at_boundary(kappa_n_perp);
+    }
   }
 
   if (zero_sheath_viscosity) {
-    zero_at_boundary(eta_n_unlimited);
-    zero_at_boundary(eta_n_perp);
+    if (structured) {
+      zero_at_boundary(eta_n_unlimited);
+      zero_at_boundary(eta_n_perp);
+    }
     zero_at_boundary(eta_n_par);
   }
 

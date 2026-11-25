@@ -147,11 +147,13 @@ the species options ``low_n_diffuse_perp``,
 ``P<species>`` or ``E<species>`` sections);
 ``braginskii_ion_viscosity:perpendicular``; the recycling options
 ``sol_recycle``, ``pfr_recycle``, ``neutral_pump`` and ``target_recycle``;
-and the ``neutral_mixed`` options ``sheath_ydown`` and ``sheath_yup`` (on by
-default), ``nonorthogonal_operators`` and ``precondition``. ``neutral_mixed``
-itself runs: its perpendicular terms use the grid file's operator, and its
-flux limiters the cell-averaged gradient from that operator's flux vector.
-Without the sheath options it suits closed flux tubes for now.
+the ``neutral_mixed`` options ``nonorthogonal_operators`` and
+``precondition``; and the ``neutral_boundary`` options
+``neutral_boundary_sol`` and ``neutral_boundary_pfr``. ``neutral_mixed``
+itself runs: its perpendicular terms use the grid file's operator, its flux
+limiters the cell-averaged gradient from that operator's flux vector, and
+its target conditions (and those of ``neutral_boundary``) set the parallel
+slices at the parallel boundaries.
 Jacobian colouring (e.g. ``solver:type = beuler`` with
 ``solver:use_coloring = true``) is not supported either. ExB advection is
 not implemented: it gives a warning, the X-Z flow is zero and
