@@ -14,7 +14,6 @@ attribute differs).
 """
 
 import argparse
-import importlib.util
 import os
 import uuid
 from pathlib import Path
@@ -163,6 +162,16 @@ def annulus_poloidal(mesh_size):
     return plane
 
 
+def gmsh_importable():
+    """Can gmsh be imported? Importing it also loads its library, which fails
+    if system libraries such as libGLU are missing."""
+    try:
+        import gmsh  # noqa: F401
+    except (ImportError, OSError):
+        return False
+    return True
+
+
 def write(filename, force, build):
     if filename.exists() and not force:
         print(filename, "exists")
@@ -258,8 +267,8 @@ def main():
     )
 
     folder = here / "US_annulus"
-    if importlib.util.find_spec("gmsh") is None:
-        print("gmsh not found: skipping", folder.name)
+    if not gmsh_importable():
+        print("gmsh cannot be imported: skipping", folder.name)
     else:
         folder.mkdir(exist_ok=True)
         for n in (16, 32):
