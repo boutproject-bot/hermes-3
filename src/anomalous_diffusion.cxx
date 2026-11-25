@@ -2,6 +2,7 @@
 
 #include "../include/div_ops.hxx"
 
+#include <bout/constants.hxx>
 #include <bout/fv_ops.hxx>
 #include <bout/mesh.hxx>
 #include <bout/options.hxx>
@@ -85,6 +86,15 @@ AnomalousDiffusion::AnomalousDiffusion(std::string name, Options& alloptions, So
     output_vars.push_back("momentum_flow_xlow");
     output_vars.push_back("momentum_flow_ylow");
   }
+  if (mesh->isUnstructured()) {
+    // Flows into the side walls, e.g. for recycling there
+    if (include_D) {
+      output_vars.push_back("particle_flow_wall");
+    }
+    if (include_D or include_chi) {
+      output_vars.push_back("energy_flow_wall");
+    }
+  }
   substitutePermissions("output", output_vars);
 }
 
@@ -129,6 +139,18 @@ void AnomalousDiffusion::transform_impl(GuardedOptions& state) {
 
   Field3D flow_xlow, flow_ylow; // Flows through cell faces
 
+  // Unstructured meshes: also the flows into the side walls per unit volume
+  const bool walls = N.isFci() and mesh->isUnstructured();
+  Field3D wall_outflow;
+  const auto fci_operator = [&](const Field3D& a, const Field3D& f) {
+    return walls ? (*dagp_op)(a, f, flow_xlow, flow_ylow, wall_outflow, false)
+                 : (*dagp_op)(a, f, flow_xlow, flow_ylow, false);
+  };
+  if (walls) {
+    particle_flow_wall = zeroFrom(N);
+    energy_flow_wall = zeroFrom(N);
+  }
+
   if (include_D) {
     // Particle diffusion. Gradients of density drive flows of particles,
     // momentum and energy. The implementation here is equivalent to an
@@ -141,22 +163,24 @@ void AnomalousDiffusion::transform_impl(GuardedOptions& state) {
     // variables in the grid.
 
     if (N.isFci()) {
-      add(species["density_source"],
-          (*dagp_op)(anomalous_D, N, flow_xlow, flow_ylow, false));
+      add(species["density_source"], fci_operator(anomalous_D, N));
     } else {
       add(species["density_source"],
           Div_a_Grad_perp_upwind_flows(anomalous_D, N2D, flow_xlow, flow_ylow));
     }
     add(species["particle_flow_xlow"], flow_xlow);
     add(species["particle_flow_ylow"], flow_ylow);
+    if (walls) {
+      particle_flow_wall += wall_outflow;
+      add(species["particle_flow_wall"], wall_outflow);
+    }
 
     // Note: Upwind operators used, or unphysical increases
     // in temperature and flow can be produced
     auto AA = get<BoutReal>(species["AA"]);
 
     if (N.isFci()) {
-      add(species["momentum_source"],
-          (*dagp_op)(AA * V * anomalous_D, N, flow_xlow, flow_ylow, false));
+      add(species["momentum_source"], fci_operator(AA * V * anomalous_D, N));
     } else {
       add(species["momentum_source"],
           Div_a_Grad_perp_upwind_flows(AA * V2D * anomalous_D, N2D, flow_xlow,
@@ -166,8 +190,7 @@ void AnomalousDiffusion::transform_impl(GuardedOptions& state) {
     add(species["momentum_flow_ylow"], flow_ylow);
 
     if (N.isFci()) {
-      add(species["energy_source"],
-          (*dagp_op)((3. / 2) * T * anomalous_D, N, flow_xlow, flow_ylow, false));
+      add(species["energy_source"], fci_operator((3. / 2) * T * anomalous_D, N));
     } else {
       add(species["energy_source"],
           Div_a_Grad_perp_upwind_flows((3. / 2) * T2D * anomalous_D, N2D, flow_xlow,
@@ -175,27 +198,33 @@ void AnomalousDiffusion::transform_impl(GuardedOptions& state) {
     }
     add(species["energy_flow_xlow"], flow_xlow);
     add(species["energy_flow_ylow"], flow_ylow);
+    if (walls) {
+      energy_flow_wall += wall_outflow;
+      add(species["energy_flow_wall"], wall_outflow);
+    }
   }
 
   if (include_chi) {
     // Gradients in temperature that drive energy flows
     if (N.isFci()) {
-      add(species["energy_source"],
-          (*dagp_op)(anomalous_chi * N, T, flow_xlow, flow_ylow, false));
+      add(species["energy_source"], fci_operator(anomalous_chi * N, T));
     } else {
       add(species["energy_source"],
           Div_a_Grad_perp_upwind_flows(anomalous_chi * N2D, T2D, flow_xlow, flow_ylow));
     }
     add(species["energy_flow_xlow"], flow_xlow);
     add(species["energy_flow_ylow"], flow_ylow);
+    if (walls) {
+      energy_flow_wall += wall_outflow;
+      add(species["energy_flow_wall"], wall_outflow);
+    }
   }
 
   if (include_nu) {
     // Gradients in flow speed that drive momentum flows
     auto AA = get<BoutReal>(species["AA"]);
     if (N.isFci()) {
-      add(species["momentum_source"],
-          (*dagp_op)(anomalous_nu * AA * N, V, flow_xlow, flow_ylow, false));
+      add(species["momentum_source"], fci_operator(anomalous_nu * AA * N, V));
     } else {
       add(species["momentum_source"],
           Div_a_Grad_perp_upwind_flows(anomalous_nu * AA * N2D, V2D, flow_xlow,
@@ -239,5 +268,31 @@ void AnomalousDiffusion::outputVars(Options& state) {
                     {"standard_name", "anomalous momentum diffusion"},
                     {"long_name", std::string("Anomalous momentum diffusion of ") + name},
                     {"source", "anomalous_diffusion"}});
+
+    if (mesh->isUnstructured()) {
+      const auto Nnorm = get<BoutReal>(state["Nnorm"]);
+      const auto Tnorm = get<BoutReal>(state["Tnorm"]);
+      if (include_D) {
+        set_with_attrs(state[{std::string("particle_flow_wall_") + name}],
+                       particle_flow_wall,
+                       {{"time_dimension", "t"},
+                        {"units", "m^-3 s^-1"},
+                        {"conversion", Nnorm * Omega_ci},
+                        {"long_name", std::string("Particle flow into the side walls "
+                                                  "per unit volume of ")
+                                          + name},
+                        {"source", "anomalous_diffusion"}});
+      }
+      if (include_D or include_chi) {
+        set_with_attrs(state[{std::string("energy_flow_wall_") + name}], energy_flow_wall,
+                       {{"time_dimension", "t"},
+                        {"units", "W m^-3"},
+                        {"conversion", SI::qe * Tnorm * Nnorm * Omega_ci},
+                        {"long_name", std::string("Energy flow into the side walls "
+                                                  "per unit volume of ")
+                                          + name},
+                        {"source", "anomalous_diffusion"}});
+      }
+    }
   }
 }

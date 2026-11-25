@@ -9,6 +9,10 @@
 # insulating walls the particle and energy content of the evolving nodes
 # must stay constant to round-off; with Dirichlet walls (the default) it
 # must change, so that the check is not trivially passed.
+#
+# The flows into the walls that anomalous_diffusion reports on unstructured
+# meshes must balance the rate of change of the content to round-off: zero
+# with insulating walls, positive (out of the plasma) with Dirichlet walls.
 
 import sys
 from pathlib import Path
@@ -67,7 +71,8 @@ def make_grid(name, perp_walls):
 
 
 def change(name):
-    """Largest relative change of the particle and energy content"""
+    """Largest relative change of the particle and energy content, and the
+    balance between its rate of change and the flow into the walls"""
     grid = f"{name}.fci.nc"
     make_grid(grid, name == "dirichlet")
     path = Path(name)
@@ -75,7 +80,9 @@ def change(name):
     path.joinpath("BOUT.inp").write_text(Path("data/BOUT.inp").read_text())
     shell(f"rm -f {name}/BOUT.dmp.*.nc")
     status, out = launch_safe(
-        f"../../../hermes-3 -d {name} mesh:file={grid}", nproc=1, pipe=True
+        f"../../../hermes-3 -d {name} mesh:file={grid} h+:diagnose=true",
+        nproc=1,
+        pipe=True,
     )
     path.joinpath("run.log").write_text(out)
     if status:
@@ -84,17 +91,39 @@ def change(name):
     with netCDF4.Dataset(grid) as g:
         mxg = int(g["MXG"][...])
         dV = np.asarray(g["dy"][:] * g["dagp_us_volume"][:])[mxg:-mxg, :, 0]
+
+    def integral(var, factor=1.0, absolute=False):
+        f = factor * collect(var, path=name, info=False, xguards=True, yguards=False)
+        f = np.abs(f) if absolute else f
+        return np.sum(f[:, mxg:-mxg, :, 0] * dV, axis=(1, 2))
+
     result = {}
-    for var in ("Nh+", "Ph+"):
-        f = collect(var, path=name, info=False, xguards=True, yguards=False)
-        content = np.sum(f[:, mxg:-mxg, :, 0] * dV, axis=(1, 2))
+    for var, factor, wall in (
+        ("Nh+", 1.0, "particle_flow_wall_h+"),
+        ("Ph+", 1.5, "energy_flow_wall_h+"),
+    ):
+        content = integral(var)
         result[var] = np.max(np.abs(content - content[0])) / content[0]
-        print(f"{name}: {var} content changes by {result[var]:.2e} (relative)")
+        # Anomalous diffusion is the only transport, so the rate of change
+        # and the flow into the walls add up to zero
+        rate = integral(f"ddt({var})", factor)
+        scale = np.max(integral(f"ddt({var})", factor, absolute=True))
+        outflow = integral(wall)
+        result[wall] = (np.max(np.abs(rate + outflow)) / scale, np.min(outflow) / scale)
+        print(
+            f"{name}: {var} content changes by {result[var]:.2e} (relative); "
+            f"with the flow into the walls {result[wall][0]:.1e}, "
+            f"smallest flow into the walls {result[wall][1]:.2e}"
+        )
     return result
 
 
 insulating, dirichlet = change("insulating"), change("dirichlet")
-ok = all(insulating[var] < 1e-10 and dirichlet[var] > 1e-3 for var in insulating)
+ok = all(insulating[var] < 1e-10 and dirichlet[var] > 1e-3 for var in ("Nh+", "Ph+"))
+for wall in ("particle_flow_wall_h+", "energy_flow_wall_h+"):
+    # Balanced to round-off; no flow at insulating walls, outflow at the others
+    ok = ok and insulating[wall][0] < 1e-12 and dirichlet[wall][0] < 1e-12
+    ok = ok and insulating[wall][1] == 0.0 and dirichlet[wall][1] > 1e-3
 if ok:
     print(" => Test passed")
     sys.exit(0)
