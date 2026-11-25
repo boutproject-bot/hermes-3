@@ -60,10 +60,10 @@ CASES = [
         GUARD,
     ),
     (
-        "target recycling",
+        "neutral pump",
         (
             "hermes:components=h+,recycling recycling:species=h+ "
-            "h+:recycle_as=h+ h+:target_recycle=true"
+            "h+:recycle_as=h+ h+:neutral_pump=true"
         ),
         True,
         GUARD,

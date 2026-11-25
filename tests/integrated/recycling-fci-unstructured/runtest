@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+
+# Target recycling on an unstructured FCI mesh (data/BOUT.inp): ions flow to
+# the walls at both ends of the (straight) field lines through sheaths, and
+# the recycling component returns them as neutral atoms in the cells next to
+# the walls. The mesh: six by six nodes in each of 16 poloidal planes,
+# closed perpendicular walls.
+#
+# With all of the flux recycled (target_recycle_multiplier = 1) and no other
+# reactions, ions and atoms together keep their number: the time
+# derivatives of the two densities must integrate to zero over the volume
+# to round-off, while the ions alone lose particles. With half of it
+# recycled, the atoms must gain half of what the ions lose.
+
+import sys
+from pathlib import Path
+
+import numpy as np
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+from netCDF4 import Dataset
+from zoidberg.field import Slab
+from zoidberg.unstructured import UnstructuredPoloidalGrid, make_unstructured_grid
+
+GRID = "recycling.fci.nc"
+TOLERANCE = 1e-12  # Relative to the volume integral of |ddt(Nh+)|
+
+
+def make_grid():
+    pol = UnstructuredPoloidalGrid.slab(
+        6, 6, 1.0, 1.0, R0=1.5, jitter=0.2, jitter_dirs="z", periodic_Z=True, seed=7
+    )
+    make_unstructured_grid(
+        GRID, pol, Slab(By=1.0, Bz=0.0, Bzprime=0.0), ny=16, Ly=10.0, walls_y=True
+    )
+
+
+def run(name, options=""):
+    path = Path(name)
+    path.mkdir(exist_ok=True)
+    path.joinpath("BOUT.inp").write_text(Path("data/BOUT.inp").read_text())
+    shell(f"rm -f {name}/BOUT.dmp.*.nc")
+    status, out = launch_safe(
+        f"../../../hermes-3 -d {name} mesh:file={GRID} "
+        "mesh:paralleltransform:type=fci "
+        f"mesh:paralleltransform:xzinterpolation:type=precomputed {options}",
+        nproc=1,
+        pipe=True,
+    )
+    path.joinpath("run.log").write_text(out)
+    if status:
+        print(f"{name}: run failed\n{out}")
+        sys.exit(1)
+
+
+make_grid()
+with Dataset(GRID) as g:
+    mxg = int(g["MXG"][...])
+    evolving = np.asarray(g["cell_number"][mxg:-mxg, :, 0]) >= 0
+    volume = np.asarray(g["dagp_us_volume"][:, :, 0]) * np.asarray(g["dy"][:, :, 0])
+volume = volume[mxg:-mxg]
+
+
+def integral(name, var, absolute=False):
+    """Volume integral of `var` at each output time"""
+    f = np.asarray(collect(var, path=name, info=False, xguards=True, yguards=False))
+    f = f[:, mxg:-mxg, :, 0]
+    f = np.abs(f) if absolute else f
+    return np.array([np.sum(np.where(evolving, v * volume, 0.0)) for v in f])
+
+
+ok = True
+for multiplier in (1.0, 0.5):
+    name = f"multiplier_{multiplier}"
+    run(name, f"h+:target_recycle_multiplier={multiplier}")
+    ions = integral(name, "ddt(Nh+)")
+    atoms = integral(name, "ddt(Nh)")
+    scale = integral(name, "ddt(Nh+)", absolute=True)
+    imbalance = np.max(np.abs(atoms + multiplier * ions) / scale)
+    print(
+        f"recycled fraction {multiplier}: ion loss rate {-ions[-1]:.3e}, atom gain "
+        f"rate {atoms[-1]:.3e}, imbalance {imbalance:.1e}"
+    )
+    ok = ok and imbalance < TOLERANCE and np.all(ions[1:] < 0.0)
+
+print(" => Test passed" if ok else " => Test failed")
+sys.exit(0 if ok else 1)

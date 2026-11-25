@@ -561,6 +561,10 @@ if(HERMES_TESTS)
   hermes_add_integrated_test(
     neutral-walls-fci-unstructured REQUIRES BOUT_USE_METRIC_3D BOUT_HAS_PETSC
     zoidberg_unstructured_FOUND)
+  # Target recycling: particle balance of ions and atoms
+  hermes_add_integrated_test(
+    recycling-fci-unstructured REQUIRES BOUT_USE_METRIC_3D BOUT_HAS_PETSC
+    zoidberg_unstructured_FOUND)
   # Variant on a gmsh annulus with two curved Dirichlet walls
   hermes_add_integrated_test(
     2D-density-anomalous-fci-unstructured-annulus

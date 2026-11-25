@@ -54,6 +54,7 @@ tests/integrated/*-fci-unstructured*/data/
 !tests/integrated/insulating-walls-fci-unstructured/data/
 !tests/integrated/neutral-diffusion-fci-unstructured/data/
 !tests/integrated/neutral-walls-fci-unstructured/data/
+!tests/integrated/recycling-fci-unstructured/data/
 
 # Generated at run time by tests/integrated/1D-golden-answer-fci{,-unstructured}/runtest
 tests/integrated/1D-golden-answer-fci/balance*/
@@ -80,6 +81,10 @@ tests/integrated/neutral-diffusion-fci-unstructured/neutral_diffusion_*.fci.nc
 tests/integrated/neutral-walls-fci-unstructured/neutral_mixed/
 tests/integrated/neutral-walls-fci-unstructured/with_neutral_boundary/
 tests/integrated/neutral-walls-fci-unstructured/neutral_walls.fci.nc
+
+# Generated at run time by tests/integrated/recycling-fci-unstructured/runtest
+tests/integrated/recycling-fci-unstructured/multiplier_*/
+tests/integrated/recycling-fci-unstructured/recycling.fci.nc
 
 # Generated at run time by tests/integrated/solver-statistics-fci-unstructured/runtest
 tests/integrated/solver-statistics-fci-unstructured/structured/

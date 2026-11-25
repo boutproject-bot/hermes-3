@@ -1,0 +1,79 @@
+# Ions flowing to two walls that cut the field lines, with sheaths, and
+# coming back from the walls as neutral atoms (target recycling), on an
+# unstructured mesh. No other reactions, so ions and atoms together keep
+# their number when all of the flux is recycled. ./runtest sets the mesh.
+
+nout = 2
+timestep = 20
+
+[solver]
+type = pvode
+mxstep = 100000
+rtol = 1e-8
+atol = 1e-12
+
+[hermes]
+components = h+, e, h, sound_speed, sheath_boundary_fci, recycling
+Nnorm = 1e19  # Reference density [m^-3]
+Bnorm = 1     # Reference magnetic field [T]
+Tnorm = 50    # Reference temperature [eV]
+
+[sound_speed]
+electron_dynamics = false
+
+[sheath_boundary_fci]
+gamma_e = 6.5
+gamma_i = 4.5
+
+[recycling]
+species = h+
+
+[h+]
+type = evolve_density, evolve_momentum, evolve_pressure
+AA = 1
+charge = 1
+thermal_conduction = false
+diagnose = true
+recycle_as = h
+target_recycle = true
+target_recycle_multiplier = 1.0
+
+[Nh+]
+function = 1 + 0.5 * sin(y)
+bndry_all = neumann
+
+[NVh+]
+function = 0
+bndry_all = neumann
+
+[Ph+]
+function = `Nh+`:function
+bndry_all = neumann
+
+[e]
+type = quasineutral, zero_current, evolve_pressure
+AA = 1 / 1836
+charge = -1
+thermal_conduction = false
+
+[Pe]
+function = `Nh+`:function
+bndry_all = neumann
+
+[h]
+type = neutral_mixed, neutral_boundary
+AA = 1
+collisionality_override = 0.01
+output_ddt = true
+
+[Nh]
+function = 0.1
+bndry_all = neumann
+
+[Ph]
+function = 0.01
+bndry_all = neumann
+
+[NVh]
+function = 0
+bndry_all = neumann
