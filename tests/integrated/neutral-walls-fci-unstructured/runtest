@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+
+# Neutral gas (neutral_mixed) on open field lines of an unstructured mesh
+# (data/BOUT.inp): six by six nodes in each of 16 poloidal planes, walls at
+# both ends of the (straight) field lines and closed perpendicular walls.
+# The density varies along the field lines, so the gas flows to the walls.
+#
+# On FCI meshes the target conditions of neutral_mixed, and those of
+# neutral_boundary when it is added, set the values in the parallel
+# slices. They let no particles through the walls, and the perpendicular
+# walls are closed, so the time derivative of the density must integrate to
+# zero over the volume to round-off, without and with neutral_boundary. The
+# runs must also move gas to the walls (the parallel flow is not zero), and
+# with neutral_boundary the gas loses energy there.
+
+import sys
+from pathlib import Path
+
+import numpy as np
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+from netCDF4 import Dataset
+from zoidberg.field import Slab
+from zoidberg.unstructured import UnstructuredPoloidalGrid, make_unstructured_grid
+
+GRID = "neutral_walls.fci.nc"
+TOLERANCE = 1e-12  # Relative to the integral of |ddt(Nd)|
+
+
+def make_grid():
+    pol = UnstructuredPoloidalGrid.slab(
+        6, 6, 1.0, 1.0, R0=1.5, jitter=0.2, jitter_dirs="z", periodic_Z=True, seed=7
+    )
+    make_unstructured_grid(
+        GRID, pol, Slab(By=1.0, Bz=0.0, Bzprime=0.0), ny=16, Ly=10.0, walls_y=True
+    )
+
+
+def run(name, options=""):
+    path = Path(name)
+    path.mkdir(exist_ok=True)
+    path.joinpath("BOUT.inp").write_text(Path("data/BOUT.inp").read_text())
+    shell(f"rm -f {name}/BOUT.dmp.*.nc")
+    status, out = launch_safe(
+        f"../../../hermes-3 -d {name} mesh:file={GRID} "
+        "mesh:paralleltransform:type=fci "
+        f"mesh:paralleltransform:xzinterpolation:type=precomputed {options}",
+        nproc=1,
+        pipe=True,
+    )
+    path.joinpath("run.log").write_text(out)
+    if status:
+        print(f"{name}: run failed\n{out}")
+        sys.exit(1)
+
+
+def interior(name, var):
+    f = np.asarray(collect(var, path=name, info=False, xguards=True, yguards=False))
+    return f[..., 0]  # (t, x, y)
+
+
+make_grid()
+with Dataset(GRID) as g:
+    mxg = int(g["MXG"][...])
+    evolving = np.asarray(g["cell_number"][mxg:-mxg, :, 0]) >= 0
+    volume = np.asarray(g["dagp_us_volume"][:, :, 0]) * np.asarray(g["dy"][:, :, 0])
+volume = volume[mxg:-mxg]
+
+ok = True
+for name, options in (
+    ("neutral_mixed", ""),
+    ("with_neutral_boundary", "d:type=neutral_mixed,neutral_boundary"),
+):
+    run(name, options)
+    ddt = interior(name, "ddt(Nd)")[:, mxg:-mxg]
+    imbalance = max(
+        abs(np.sum(np.where(evolving, d * volume, 0.0)))
+        / np.sum(np.where(evolving, abs(d) * volume, 0.0))
+        for d in ddt
+    )
+    flow = np.max(np.abs(interior(name, "NVd")[-1]))
+    line = (
+        f"{name}: particle imbalance of ddt(Nd) {imbalance:.1e}, "
+        f"largest momentum at the end {flow:.2e}"
+    )
+    ok = ok and imbalance < TOLERANCE and flow > 1e-6
+    if "neutral_boundary" in options:
+        cooling = np.min(interior(name, "Ed_target_refl")[-1])
+        line += f", strongest target cooling {cooling:.2e}"
+        ok = ok and cooling < 0.0
+    print(line)
+
+print(" => Test passed" if ok else " => Test failed")
+sys.exit(0 if ok else 1)

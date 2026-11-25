@@ -30,8 +30,8 @@ CASES = [
         INDEX_COORDINATE,
     ),
     (
-        "neutral_mixed",
-        "hermes:components=h+,d d:type=neutral_mixed d:AA=2",
+        "neutral_mixed nonorthogonal_operators",
+        "hermes:components=h+,d d:type=neutral_mixed d:AA=2 d:nonorthogonal_operators=true",
         True,
         GUARD,
     ),
@@ -60,10 +60,10 @@ CASES = [
         GUARD,
     ),
     (
-        "target recycling",
+        "neutral pump",
         (
             "hermes:components=h+,recycling recycling:species=h+ "
-            "h+:recycle_as=h+ h+:target_recycle=true"
+            "h+:recycle_as=h+ h+:neutral_pump=true"
         ),
         True,
         GUARD,

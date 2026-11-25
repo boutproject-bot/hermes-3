@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+
+# Reaction rates are averaged over each cell along the magnetic field
+# (Simpson's rule, with limited values at the cell ends from the cell and
+# its two neighbours along the field, weighted by their Jacobians). On FCI
+# meshes the neighbours and their Jacobians are in the parallel slices.
+# Ions, electrons and atoms with ionisation (data/BOUT.inp), first
+# evaluation (t = 0) only:
+#
+# 1. Uniform plasma and atoms between two walls (targets with sheaths): the
+#    ionisation source and its energy loss must be the same in every cell,
+#    including the cells next to the targets.
+# 2. Field lines that move exactly one node in Z per plane (closed in y),
+#    with plasma and atoms constant along them and varying across them,
+#    against the same profiles on straight field lines. Along the field each
+#    cell sees only its own values, so every cell of the tilted mesh must
+#    give the rates of the cell of the straight mesh that has its values.
+#    Neighbours taken by index lie on other field lines.
+
+import sys
+from pathlib import Path
+
+import numpy as np
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+from netCDF4 import Dataset
+from zoidberg.field import Slab
+from zoidberg.unstructured import UnstructuredPoloidalGrid, make_unstructured_grid
+
+TOLERANCE = 1e-12  # Relative
+RATES = ("Sh+_iz", "Rh+_ex")  # Ionisation source and its energy loss
+NZ, NY = 8, 8  # Part 2: nodes in Z (period 1) and planes (one apart in y)
+
+
+def run(name, grid, options):
+    path = Path(name)
+    path.mkdir(exist_ok=True)
+    path.joinpath("BOUT.inp").write_text(Path("data/BOUT.inp").read_text())
+    shell(f"rm -f {name}/BOUT.dmp.*.nc")
+    status, out = launch_safe(
+        f"../../../hermes-3 -d {name} mesh:file={grid} "
+        "mesh:paralleltransform:type=fci "
+        f"mesh:paralleltransform:xzinterpolation:type=precomputed {options}",
+        nproc=1,
+        pipe=True,
+    )
+    path.joinpath("run.log").write_text(out)
+    if status:
+        print(f"{name}: run failed\n{out}")
+        sys.exit(1)
+
+
+def at_start(name, var, mxg):
+    """Values at t = 0 as (node, plane)"""
+    f = collect(var, path=name, tind=0, info=False, xguards=True, yguards=False)
+    return np.asarray(f)[0, mxg:-mxg, :, 0]
+
+
+ok = True
+
+# 1. Uniform plasma between two walls
+pol = UnstructuredPoloidalGrid.slab(
+    6, 6, 1.0, 1.0, R0=1.5, jitter=0.2, jitter_dirs="z", periodic_Z=True, seed=7
+)
+make_unstructured_grid(
+    "walls.fci.nc", pol, Slab(By=1.0, Bz=0.0, Bzprime=0.0), ny=16, Ly=10.0, walls_y=True
+)
+with Dataset("walls.fci.nc") as g:
+    mxg = int(g["MXG"][...])
+    evolving = np.asarray(g["cell_number"][mxg:-mxg, :, 0]) >= 0
+run("uniform", "walls.fci.nc", "profile:amplitude=0")
+for var in RATES:
+    f = at_start("uniform", var, mxg)[evolving]
+    spread = (f.max() - f.min()) / abs(f.mean())
+    print(f"uniform plasma between walls: {var} varies by {spread:.1e}")
+    ok = ok and spread < TOLERANCE
+
+# 2. Tilted against straight field lines on the same nodes (no jitter, no
+#    relaxation, so that the tilted field lines land exactly on nodes and
+#    the maps are injections). This lattice is too regular for the
+#    fourth-order fits of the perpendicular operator, which does not matter
+#    here, so lower orders are allowed (strict=False).
+pol = UnstructuredPoloidalGrid.slab(
+    4, NZ, 1.0, 1.0, R0=1.5, jitter=0.0, periodic_Z=True, relax=False
+)
+for name, tilt in (("straight", 0), ("tilted", 1)):
+    grid = f"{name}.fci.nc"
+    field = Slab(By=1.0, Bz=tilt / NZ, Bzprime=0.0)
+    make_unstructured_grid(
+        grid, pol, field, ny=NY, Ly=float(NY), walls_y=False, strict=False
+    )
+    run(name, grid, f"profile:tilt={tilt}")
+
+with Dataset("tilted.fci.nc") as g:
+    mxg = int(g["MXG"][...])
+    R = np.asarray(g["R"][mxg:-mxg, 0, 0])
+    Z = np.asarray(g["Z"][mxg:-mxg, 0, 0])
+
+
+def node_at(r, z):
+    distance = np.abs(R - r) + np.abs((Z - z + 0.5) % 1.0 - 0.5)
+    node = np.argmin(distance)
+    assert distance[node] < 1e-9, "no node there"
+    return node
+
+
+# The tilted field line through node n in plane j starts at Z - j / NZ in
+# plane 0, where the straight mesh has the same values in every plane
+start = np.array(
+    [[node_at(R[n], Z[n] - j / NZ) for j in range(NY)] for n in range(len(R))]
+)
+planes = np.broadcast_to(np.arange(NY), start.shape)
+
+
+def tilted_against_straight(var):
+    straight = at_start("straight", var, mxg)
+    tilted = at_start("tilted", var, mxg)
+    mismatch = np.max(np.abs(tilted - straight[start, planes])) / np.max(
+        np.abs(straight)
+    )
+    variation = (straight.max() - straight.min()) / np.max(np.abs(straight))
+    return mismatch, variation
+
+
+for var in ("Nh+", "Pe", "Nh"):  # Same values cell by cell, to check the set-up
+    mismatch, _ = tilted_against_straight(var)
+    if mismatch > TOLERANCE:
+        print(f"set-up: {var} differs between the two meshes by {mismatch:.1e}")
+        ok = False
+for var in RATES:
+    mismatch, variation = tilted_against_straight(var)
+    print(
+        f"tilted against straight field lines: {var} differs by {mismatch:.1e} "
+        f"(varies by {variation:.2f} across the field lines)"
+    )
+    ok = ok and mismatch < TOLERANCE
+
+print(" => Test passed" if ok else " => Test failed")
+sys.exit(0 if ok else 1)

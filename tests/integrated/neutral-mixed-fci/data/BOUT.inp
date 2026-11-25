@@ -1,0 +1,51 @@
+# Neutral gas (neutral_mixed) on a structured FCI mesh between two walls
+# that cut the (straight) field lines, with no plasma and a fixed collision
+# frequency. The density varies along the field lines, so that the gas
+# flows to the walls, and across them, with ln(Nd) linear in R, so that the
+# flux limiter sees a known gradient.
+
+nout = 2
+timestep = 50
+
+[mesh]
+file = "../../../grids/slab_with_BC/MMS_straight_slab_8_128_4_True.fci.grid.nc"
+
+[mesh:paralleltransform]
+type = fci
+
+[input:grid_variables]
+R = field3d
+
+[solver]
+type = pvode
+mxstep = 100000
+rtol = 1e-8
+atol = 1e-12
+
+[hermes]
+components = d
+Nnorm = 1e19  # Reference density [m^-3]
+Bnorm = 1     # Reference magnetic field [T]
+Tnorm = 50    # Reference temperature [eV]
+
+[d]
+type = neutral_mixed  # ./runtest also adds neutral_boundary
+AA = 2
+collisionality_override = 0.01
+output_ddt = true
+diagnose = true
+flux_limit = 0.5
+limiter_gradient_floor = 0.01   # [1/m], low, so that the gradient matters
+limiter_gradient_ceiling = 100  # [1/m]
+
+[Nd]
+function = (1 + 0.5 * sin(y)) * exp(2 * (gridvar:R - 2))
+bndry_all = neumann
+
+[Pd]
+function = `Nd`:function
+bndry_all = neumann
+
+[NVd]
+function = 0
+bndry_all = neumann

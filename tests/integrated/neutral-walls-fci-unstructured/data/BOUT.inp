@@ -1,0 +1,38 @@
+# Neutral gas between two walls that cut the field lines (targets), on an
+# unstructured mesh: no plasma, a fixed collision frequency, and a density
+# that varies along the field lines, so that the gas flows towards the
+# walls. ./runtest sets the mesh.
+
+nout = 4
+timestep = 50
+
+[solver]
+type = pvode
+mxstep = 100000
+rtol = 1e-8
+atol = 1e-12
+
+[hermes]
+components = d
+Nnorm = 1e19  # Reference density [m^-3]
+Bnorm = 1     # Reference magnetic field [T]
+Tnorm = 50    # Reference temperature [eV]
+
+[d]
+type = neutral_mixed  # ./runtest also adds neutral_boundary
+AA = 2
+collisionality_override = 0.01
+output_ddt = true
+diagnose = true
+
+[Nd]
+function = 1 + 0.5 * sin(y)
+bndry_all = neumann
+
+[Pd]
+function = `Nd`:function
+bndry_all = neumann
+
+[NVd]
+function = 0
+bndry_all = neumann

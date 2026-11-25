@@ -110,6 +110,7 @@ struct RateHelper {
       const GuardedOptions reactant_density = state["species"][reactant]["density"];
       this->reactant_densities.push_back(&reactant_density.GetRef<Field3D>());
     }
+    this->fci = this->reactant_densities.front()->isFci();
 
     // Compute / extract fields that are required as parameters for the rate calculations
     if constexpr (RateParamsType == RateParamsTypes::ET) {
@@ -160,6 +161,17 @@ struct RateHelper {
     std::visit(
         [this, &cell_props, &do_averaging, &result](auto&& rate_calc_func) {
           auto J = result.rate.getCoordinates()->J();
+          if (do_averaging) {
+            // Neighbours along the magnetic field: on FCI meshes in the
+            // parallel slices
+            requireParallelSlices(J, fci);
+            for (const auto* f : reactant_densities) {
+              requireParallelSlices(*f, fci);
+            }
+            for (const auto* f : rate_params) {
+              requireParallelSlices(*f, fci);
+            }
+          }
           BOUT_FOR(i, region) {
             // Get densities for this cell
             collect_densities(i, cell_props, do_averaging);
@@ -214,8 +226,8 @@ struct RateHelper {
             if (do_averaging) {
               // Compute averaged rate, collision frequencies and store in result
               auto Ji = J[i];
-              auto Jm = J.yup()[i.ym()];
-              auto Jp = J.ydown()[i.yp()];
+              auto Jm = alongField(J, -1, fci)[i.ym()];
+              auto Jp = alongField(J, +1, fci)[i.yp()];
 
               result.rate[i] = 4. / 6 * cell_props.rate.centre
                                + (Ji + Jm) / (12. * Ji) * cell_props.rate.left
@@ -265,6 +277,9 @@ private:
 
   // Storage for Teff when RateParamsType == T (needed to keep the object alive)
   Field3D Teff_storage;
+
+  /// FCI mesh: the neighbours along the magnetic field are in the parallel slices
+  bool fci = false;
 
   /**
    * @brief Compute the effective temperature (in eV) of heavy reactants.
@@ -350,10 +365,10 @@ private:
       if (do_averaging) {
         auto ym = i.ym();
         auto yp = i.yp();
-        cell_props.densities[reactant_idx].left =
-            cellLeft<Limiter>((*dens)[i], (*dens)[ym], (*dens)[yp]);
-        cell_props.densities[reactant_idx].right =
-            cellRight<Limiter>((*dens)[i], (*dens)[ym], (*dens)[yp]);
+        const BoutReal m = alongField(*dens, -1, fci)[ym];
+        const BoutReal p = alongField(*dens, +1, fci)[yp];
+        cell_props.densities[reactant_idx].left = cellLeft<Limiter>((*dens)[i], m, p);
+        cell_props.densities[reactant_idx].right = cellRight<Limiter>((*dens)[i], m, p);
       }
     }
   }
@@ -373,8 +388,10 @@ private:
     DataTriple result;
     result.centre = field[i];
     if (do_averaging) {
-      result.left = cellLeft<Limiter>(field[i], field[ym], field[yp]);
-      result.right = cellRight<Limiter>(field[i], field[ym], field[yp]);
+      const BoutReal m = alongField(field, -1, fci)[ym];
+      const BoutReal p = alongField(field, +1, fci)[yp];
+      result.left = cellLeft<Limiter>(field[i], m, p);
+      result.right = cellRight<Limiter>(field[i], m, p);
     }
     return result;
   }

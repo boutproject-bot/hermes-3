@@ -496,6 +496,7 @@ if(HERMES_TESTS)
   hermes_add_integrated_test(2D-fluid-anomalous-fci REQUIRES BOUT_USE_METRIC_3D)
   hermes_add_integrated_test(1D-conduction-fci REQUIRES BOUT_USE_METRIC_3D)
   hermes_add_integrated_test(1D-golden-answer-fci REQUIRES BOUT_USE_METRIC_3D)
+  hermes_add_integrated_test(neutral-mixed-fci REQUIRES BOUT_USE_METRIC_3D)
 
   # Unstructured-mesh counterparts of the FCI MMS tests
   foreach(
@@ -553,6 +554,22 @@ if(HERMES_TESTS)
   hermes_add_integrated_test(
     insulating-walls-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
     BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
+  # neutral_mixed: structured mesh against the same cells as a list
+  hermes_add_integrated_test(
+    neutral-diffusion-fci-unstructured REQUIRES BOUT_USE_METRIC_3D
+    BOUT_HAS_PETSC zoidberg_unstructured_FOUND)
+  # neutral_mixed and neutral_boundary on open field lines
+  hermes_add_integrated_test(
+    neutral-walls-fci-unstructured REQUIRES BOUT_USE_METRIC_3D BOUT_HAS_PETSC
+    zoidberg_unstructured_FOUND)
+  # Target recycling: particle balance of ions and atoms
+  hermes_add_integrated_test(
+    recycling-fci-unstructured REQUIRES BOUT_USE_METRIC_3D BOUT_HAS_PETSC
+    zoidberg_unstructured_FOUND)
+  # Reaction rates averaged along the magnetic field
+  hermes_add_integrated_test(
+    reactions-fci-unstructured REQUIRES BOUT_USE_METRIC_3D BOUT_HAS_PETSC
+    zoidberg_unstructured_FOUND)
   # Variant on a gmsh annulus with two curved Dirichlet walls
   hermes_add_integrated_test(
     2D-density-anomalous-fci-unstructured-annulus

@@ -25,8 +25,11 @@ NeutralBoundary::NeutralBoundary(std::string name, Options& alloptions,
   upper_y = options["neutral_boundary_upper_y"]
                 .doc("Boundary on upper y?")
                 .withDefault<bool>(true);
+  yboundary = bout::boundary::YBoundary(*mesh, lower_y, upper_y);
   sol = options["neutral_boundary_sol"].doc("Boundary on SOL?").withDefault<bool>(false);
   pfr = options["neutral_boundary_pfr"].doc("Boundary on PFR?").withDefault<bool>(false);
+  requireStructuredMesh("neutral_boundary_sol", sol);
+  requireStructuredMesh("neutral_boundary_pfr", pfr);
 
   target_energy_refl_factor = options["target_energy_refl_factor"]
                                   .doc("Fraction of energy retained by neutral particles "
@@ -67,155 +70,108 @@ void NeutralBoundary::transform_impl(GuardedOptions& state) {
   auto species = state["species"][objectName()];
   const BoutReal AA = get<BoutReal>(species["AA"]);
 
-  Field3D Nn = toFieldAligned(GET_NOBOUNDARY(Field3D, species["density"]));
-  Field3D Pn = toFieldAligned(GET_NOBOUNDARY(Field3D, species["pressure"]));
-  Field3D Tn = toFieldAligned(GET_NOBOUNDARY(Field3D, species["temperature"]));
+  // FCI meshes have no field-aligned form: there the boundary values are
+  // the parallel slices of the fields
+  const bool fci = mesh->isFci();
+  const auto aligned = [fci](const Field3D& f) { return fci ? f : toFieldAligned(f); };
+  const auto unaligned = [fci](const Field3D& f) {
+    return fci ? f : fromFieldAligned(f);
+  };
+
+  Field3D Nn = aligned(GET_NOBOUNDARY(Field3D, species["density"]));
+  Field3D Pn = aligned(GET_NOBOUNDARY(Field3D, species["pressure"]));
+  Field3D Tn = aligned(GET_NOBOUNDARY(Field3D, species["temperature"]));
 
   Field3D Vn = IS_SET_NOBOUNDARY(species["velocity"])
-                   ? toFieldAligned(getNoBoundary<Field3D>(species["velocity"]))
+                   ? aligned(getNoBoundary<Field3D>(species["velocity"]))
                    : zeroFrom(Nn);
 
   Field3D NVn = IS_SET_NOBOUNDARY(species["momentum"])
-                    ? toFieldAligned(getNoBoundary<Field3D>(species["momentum"]))
+                    ? aligned(getNoBoundary<Field3D>(species["momentum"]))
                     : zeroFrom(Nn);
 
   // Get the energy source, or create if not set
-  Field3D energy_source =
-      species.isSet("energy_source")
-          ? toFieldAligned(getNonFinal<Field3D>(species["energy_source"]))
-          : zeroFrom(Nn);
+  Field3D energy_source = species.isSet("energy_source")
+                              ? aligned(getNonFinal<Field3D>(species["energy_source"]))
+                              : zeroFrom(Nn);
 
   Coordinates* coord = mesh->getCoordinates();
   target_energy_source = 0;
   wall_energy_source = 0;
 
-  // Targets
-  if (lower_y) {
-    for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
-      for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        auto i = indexAt(Nn, r.ind, mesh->ystart, jz);
-        auto im = i.ym();
+  // Targets: on each point, current() is the cell next to the target and
+  // next() the boundary cell beyond it
+  yboundary.iter([&](auto& pnt) {
+    const auto i = pnt.ind();
 
-        // Free boundary condition on Nn, Pn, Tn
-        // This is problematic when Nn, Pn or Tn are zero
-        // Nn[im] = SQ(Nn[i]) / Nn[ip];
-        // Pn[im] = SQ(Pn[i]) / Pn[ip];
-        // Tn[im] = SQ(Tn[i]) / Tn[ip];
+    // Free boundary condition on Nn, Pn, Tn
+    // This is problematic when Nn, Pn or Tn are zero
+    // pnt.next(Nn) = SQ(pnt.current(Nn)) / pnt.prev(Nn);
+    // pnt.next(Pn) = SQ(pnt.current(Pn)) / pnt.prev(Pn);
+    // pnt.next(Tn) = SQ(pnt.current(Tn)) / pnt.prev(Tn);
 
-        // Neumann boundary condition: do not extrapolate, but
-        // assume the target value is same as the final cell centre.
-        // Shouldn't affect results much and more resilient to positivity issues
-        Nn[im] = Nn[i];
-        Pn[im] = Pn[i];
-        Tn[im] = Tn[i];
+    // Neumann boundary condition: do not extrapolate, but
+    // assume the target value is same as the final cell centre.
+    // Shouldn't affect results much and more resilient to positivity issues
+    pnt.next(Nn) = pnt.current(Nn);
+    pnt.next(Pn) = pnt.current(Pn);
+    pnt.next(Tn) = pnt.current(Tn);
 
-        // No-flow boundary condition
-        Vn[im] = -Vn[i];
-        NVn[im] = -NVn[i];
+    // No-flow boundary condition
+    pnt.next(Vn) = -pnt.current(Vn);
+    pnt.next(NVn) = -pnt.current(NVn);
 
-        // Calculate midpoint values at wall
-        const BoutReal nnsheath = 0.5 * (Nn[im] + Nn[i]);
-        const BoutReal tnsheath = 0.5 * (Tn[im] + Tn[i]);
+    // Calculate midpoint values at wall
+    const BoutReal nnsheath = 0.5 * (pnt.next(Nn) + pnt.current(Nn));
+    const BoutReal tnsheath = 0.5 * (pnt.next(Tn) + pnt.current(Tn));
 
-        // Thermal speed
-        const BoutReal v_th =
-            0.25 * sqrt(8 * tnsheath / (PI * AA)); // Stangeby p.69 eqns. 2.21, 2.24
+    // Thermal speed
+    const BoutReal v_th =
+        0.25 * sqrt(8 * tnsheath / (PI * AA)); // Stangeby p.69 eqns. 2.21, 2.24
 
-        // Approach adapted from D. Power thesis 2023
-        BoutReal T_FC = 3 / Tnorm; // Franck-Condon temp (hardcoded for now)
+    // Approach adapted from D. Power thesis 2023
+    BoutReal T_FC = 3 / Tnorm; // Franck-Condon temp (hardcoded for now)
 
-        // Outgoing neutral heat flux [W/m^2]
-        // This is rearranged from Power for clarity - note definition of v_th.
-        // Uses standard Stangeby 1D static Maxwellian particle/heat fluxes for fast terms
-        // and simply Q = T * particle flux for the monoenergetic thermal reflected
-        // population.
-        BoutReal q = 2 * nnsheath * tnsheath * v_th // Incident energy
-                     - (target_energy_refl_factor * target_fast_refl_fraction) * 2
-                           * nnsheath * tnsheath * v_th // Fast reflected energy
-                     - (1 - target_fast_refl_fraction) * T_FC * nnsheath
-                           * v_th; // Thermal reflected energy
+    // Outgoing neutral heat flux [W/m^2]
+    // This is rearranged from Power for clarity - note definition of v_th.
+    // Uses standard Stangeby 1D static Maxwellian particle/heat fluxes for fast terms
+    // and simply Q = T * particle flux for the monoenergetic thermal reflected
+    // population.
+    BoutReal q = 2 * nnsheath * tnsheath * v_th // Incident energy
+                 - (target_energy_refl_factor * target_fast_refl_fraction) * 2 * nnsheath
+                       * tnsheath * v_th // Fast reflected energy
+                 - (1 - target_fast_refl_fraction) * T_FC * nnsheath
+                       * v_th; // Thermal reflected energy
 
-        // Cross-sectional area in XZ plane:
-        BoutReal da = (coord->J()[i] + coord->J()[im])
-                      / (sqrt(coord->g_22()[i]) + sqrt(coord->g_22()[im])) * 0.5
-                      * (coord->dx()[i] + coord->dx()[im]) * 0.5
-                      * (coord->dz()[i] + coord->dz()[im]); // [m^2]
-
-        // Multiply by area to get energy flow (power)
-        BoutReal flow = q * da; // [W]
-
-        // Divide by cell volume to get source [W/m^3]
-        BoutReal cooling_source =
-            flow / (coord->dx()[i] * coord->dy()[i] * coord->dz()[i] * coord->J()[i]);
-
-        // Subtract from cell next to boundary
-        energy_source[i] -= cooling_source;
-        target_energy_source[i] -= cooling_source;
+    BoutReal cooling_source = 0.0;
+    if (fci) {
+      // Only where the cell touches the target, through its face area, as
+      // in sheath_boundary_fci
+      if (std::abs(pnt.offset()) != 1) {
+        return;
       }
+      const BoutReal flow =
+          q * (pnt.dir() > 0 ? coord->cell_area_yhigh()[i] : coord->cell_area_ylow()[i]);
+      cooling_source = flow / coord->cell_volume()[i];
+    } else {
+      // Cross-sectional area in XZ plane:
+      BoutReal da = (pnt.current(coord->J()) + pnt.next(coord->J()))
+                    / (sqrt(pnt.current(coord->g_22())) + sqrt(pnt.next(coord->g_22())))
+                    * 0.5 * (pnt.current(coord->dx()) + pnt.next(coord->dx())) * 0.5
+                    * (pnt.current(coord->dz()) + pnt.next(coord->dz())); // [m^2]
+
+      // Multiply by area to get energy flow (power)
+      BoutReal flow = q * da; // [W]
+
+      // Divide by cell volume to get source [W/m^3]
+      cooling_source =
+          flow / (coord->dx()[i] * coord->dy()[i] * coord->dz()[i] * coord->J()[i]);
     }
-  }
 
-  if (upper_y) {
-    for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
-      for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        auto i = indexAt(Nn, r.ind, mesh->yend, jz);
-        auto ip = i.yp();
-
-        // Free boundary condition on Nn, Pn, Tn
-        // This is problematic when Nn, Pn or Tn are zero
-        // Nn[ip] = SQ(Nn[i]) / Nn[im];
-        // Pn[ip] = SQ(Pn[i]) / Pn[im];
-        // Tn[ip] = SQ(Tn[i]) / Tn[im];
-
-        // Neumann boundary condition: do not extrapolate, but
-        // assume the target value is same as the final cell centre.
-        // Shouldn't affect results much and more resilient to positivity issues
-        Nn[ip] = Nn[i];
-        Pn[ip] = Pn[i];
-        Tn[ip] = Tn[i];
-
-        // No-flow boundary condition
-        Vn[ip] = -Vn[i];
-        NVn[ip] = -NVn[i];
-
-        // Calculate midpoint values at wall
-        const BoutReal nnsheath = 0.5 * (Nn[ip] + Nn[i]);
-        const BoutReal tnsheath = 0.5 * (Tn[ip] + Tn[i]);
-
-        // Thermal speed
-        const BoutReal v_th =
-            0.25 * sqrt(8 * tnsheath / (PI * AA)); // Stangeby p.69 eqns. 2.21, 2.24
-
-        // Approach adapted from D. Power thesis 2023
-        BoutReal T_FC = 3 / Tnorm; // Franck-Condon temp (hardcoded for now)
-
-        // Outgoing neutral heat flux [W/m^2]
-        // This is rearranged from Power for clarity - note definition of v_th.
-        BoutReal q = 2 * nnsheath * tnsheath * v_th // Incident energy
-                     - (target_energy_refl_factor * target_fast_refl_fraction) * 2
-                           * nnsheath * tnsheath * v_th // Fast reflected energy
-                     - (1 - target_fast_refl_fraction) * T_FC * nnsheath
-                           * v_th; // Thermal reflected energy
-
-        // Cross-sectional area in XZ plane:
-        BoutReal da = (coord->J()[i] + coord->J()[ip])
-                      / (sqrt(coord->g_22()[i]) + sqrt(coord->g_22()[ip])) * 0.5
-                      * (coord->dx()[i] + coord->dx()[ip]) * 0.5
-                      * (coord->dz()[i] + coord->dz()[ip]); // [m^2]
-
-        // Multiply by area to get energy flow (power)
-        BoutReal flow = q * da; // [W]
-
-        // Divide by cell volume to get source [W/m^3]
-        BoutReal cooling_source =
-            flow / (coord->dx()[i] * coord->dy()[i] * coord->dz()[i] * coord->J()[i]);
-
-        // Subtract from cell next to boundary
-        energy_source[i] -= cooling_source;
-        target_energy_source[i] -= cooling_source;
-      }
-    }
-  }
+    // Subtract from cell next to boundary
+    energy_source[i] -= cooling_source;
+    target_energy_source[i] -= cooling_source;
+  });
 
   // SOL edge
   if (sol) {
@@ -334,19 +290,19 @@ void NeutralBoundary::transform_impl(GuardedOptions& state) {
   }
 
   // Set density, pressure and temperature, now with boundary conditions
-  setBoundary(species["density"], fromFieldAligned(Nn));
-  setBoundary(species["temperature"], fromFieldAligned(Tn));
-  setBoundary(species["pressure"], fromFieldAligned(Pn));
+  setBoundary(species["density"], unaligned(Nn));
+  setBoundary(species["temperature"], unaligned(Tn));
+  setBoundary(species["pressure"], unaligned(Pn));
   if (IS_SET_NOBOUNDARY(species["velocity"])) {
-    setBoundary(species["velocity"], fromFieldAligned(Vn));
+    setBoundary(species["velocity"], unaligned(Vn));
   }
   if (IS_SET_NOBOUNDARY(species["momentum"])) {
-    setBoundary(species["momentum"], fromFieldAligned(NVn));
+    setBoundary(species["momentum"], unaligned(NVn));
   }
 
   // Set energy source (negative in cell next to sheath)
   // Note: energy_source includes any sources previously set in other components
-  set(species["energy_source"], fromFieldAligned(energy_source));
+  set(species["energy_source"], unaligned(energy_source));
 }
 
 void NeutralBoundary::outputVars(Options& state) {

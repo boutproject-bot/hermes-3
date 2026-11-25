@@ -45,6 +45,25 @@ BoutReal cellRight(BoutReal c, BoutReal m, BoutReal p) {
   return s.R;
 }
 
+/// The field that holds the value in the next cell along the magnetic field
+/// from cell i, at index i.yp() (dir = +1) or i.ym() (dir = -1): on FCI
+/// meshes the parallel slice, otherwise the field itself
+template <typename T>
+const T& alongField(const T& f, int dir, bool fci) {
+  return fci ? f.ynext(dir) : f;
+}
+
+/// On FCI meshes, averages along the magnetic field need the parallel slices
+template <typename T>
+void requireParallelSlices(const T& f, bool fci) {
+  if constexpr (std::is_base_of_v<Field3D, T>) {
+    if (fci and not f.hasParallelSlices()) {
+      throw BoutException("Averaging along the magnetic field on an FCI mesh needs the "
+                          "parallel slices of every field it uses");
+    }
+  }
+}
+
 /// Take a function of BoutReals, and a region. Return
 /// a function which takes fields (e.g. Field2D, Field3D),
 /// and for every cell in the region evaluates the function
@@ -76,19 +95,28 @@ auto cellAverage(Function func, const RegionType& region) {
 
     // Get the coordinate Jacobian
     auto J = result.getCoordinates()->J();
+    // Neighbours along the magnetic field: on FCI meshes in the parallel slices
+    const bool fci = result.isFci();
+    requireParallelSlices(J, fci);
+    (requireParallelSlices(args, fci), ...);
     BOUT_FOR(i, region) {
       // Offset indices
       auto yp = i.yp();
       auto ym = i.ym();
       auto Ji = J[i];
+      auto Jm = alongField(J, -1, fci)[ym];
+      auto Jp = alongField(J, +1, fci)[yp];
 
       // Integrate in Y using Simpson's rule
       // Using limiter to calculate cell edge values
-      result[i] = 4. / 6 * func((args[i])...)
-                  + (Ji + J[ym]) / (12. * Ji)
-                        * func(cellLeft<CellEdges>(args[i], args[ym], args[yp])...)
-                  + (Ji + J[yp]) / (12. * Ji)
-                        * func(cellRight<CellEdges>(args[i], args[ym], args[yp])...);
+      result[i] =
+          4. / 6 * func((args[i])...)
+          + (Ji + Jm) / (12. * Ji)
+                * func(cellLeft<CellEdges>(args[i], alongField(args, -1, fci)[ym],
+                                           alongField(args, +1, fci)[yp])...)
+          + (Ji + Jp) / (12. * Ji)
+                * func(cellRight<CellEdges>(args[i], alongField(args, -1, fci)[ym],
+                                            alongField(args, +1, fci)[yp])...);
     }
     return result;
   };

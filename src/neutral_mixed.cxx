@@ -67,8 +67,6 @@ BoutReal apply_limiter(BoutReal unlimited, BoutReal max,
 
 NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver* solver)
     : NamedComponent(name, {readWrite("species:{name}:{outputs}")}), name(name) {
-  requireStructuredMesh("Component neutral_mixed");
-
   // Normalisations
   const Options& units = alloptions["units"];
   const BoutReal meters = units["meters"];
@@ -82,6 +80,34 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
   ASSERT0(mesh->xstart > 0);
 
   auto& options = alloptions[name];
+
+  nonorthogonal_operators =
+      options["nonorthogonal_operators"]
+          .doc("Use nonorthogonal operators for radial transport? NOTE: may be broken")
+          .withDefault<bool>(false);
+
+  sheath_ydown = options["sheath_ydown"]
+                     .doc("Enable wall boundary conditions at ydown")
+                     .withDefault<bool>(true);
+
+  sheath_yup = options["sheath_yup"]
+                   .doc("Enable wall boundary conditions at yup")
+                   .withDefault<bool>(true);
+
+  precondition = options["precondition"]
+                     .doc("Enable preconditioning in neutral model?")
+                     .withDefault<bool>(false);
+
+  // FCI meshes: the perpendicular terms use the FCI operator, as in
+  // anomalous_diffusion (on unstructured meshes the grid file's operator).
+  // The nonorthogonal operators and the preconditioner work in structured
+  // index space.
+  requireStructuredMesh("neutral_mixed:nonorthogonal_operators", nonorthogonal_operators);
+  requireStructuredMesh("neutral_mixed:precondition", precondition);
+  sheath_boundary = bout::boundary::YBoundary(*mesh, sheath_ydown, sheath_yup);
+  if (mesh->isFci()) {
+    dagp_op = FV::Div_a_Grad_perp_FCI::create(mesh, meters);
+  }
 
   // Evolving variables e.g name is "h" or "h+"
   solver->add(Nn, std::string("N") + name);
@@ -99,19 +125,6 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
     NVn = 0.0;
     Vn = 0.0;
   }
-
-  nonorthogonal_operators =
-      options["nonorthogonal_operators"]
-          .doc("Use nonorthogonal operators for radial transport? NOTE: may be broken")
-          .withDefault<bool>(false);
-
-  sheath_ydown = options["sheath_ydown"]
-                     .doc("Enable wall boundary conditions at ydown")
-                     .withDefault<bool>(true);
-
-  sheath_yup = options["sheath_yup"]
-                   .doc("Enable wall boundary conditions at yup")
-                   .withDefault<bool>(true);
 
   zero_sheath_conductivity = options["zero_sheath_conductivity"]
                                  .doc("Prevents heat conduction through the sheath "
@@ -142,10 +155,6 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                       / get<BoutReal>(alloptions["units"]["eV"]);
 
   pressure_floor = density_floor * temperature_floor;
-
-  precondition = options["precondition"]
-                     .doc("Enable preconditioning in neutral model?")
-                     .withDefault<bool>(false);
 
   lax_flux =
       options["lax_flux"].doc("Enable stabilising lax flux?").withDefault<bool>(true);
@@ -429,23 +438,73 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
       "outputs", {"AA", "density", "pressure", "temperature", "momentum", "velocity"});
 }
 
+Field3D NeutralMixed::perpDiffusion(const Field3D& a, const Field3D& f,
+                                    Field3D& flow_xlow, Field3D& flow_ylow) const {
+  if (dagp_op) {
+    // FCI mesh. On unstructured meshes the flows are the R and Z components
+    // of the cell-averaged flux vector
+    return (*dagp_op)(a, f, flow_xlow, flow_ylow, false);
+  }
+  if (nonorthogonal_operators) {
+    return Div_a_Grad_perp_nonorthog(a, f, flow_xlow, flow_ylow);
+  }
+  return Div_a_Grad_perp_flows(a, f, flow_xlow, flow_ylow);
+}
+
+Field3D NeutralMixed::perpGradientSquared(const Field3D& f) const {
+  if (mesh->isUnstructured()) {
+    // Cell-averaged gradient in the poloidal plane: the flux vector of the
+    // grid file's operator with a = 1
+    Field3D grad_R;
+    Field3D grad_Z;
+    (*dagp_op)(Field3D{1.0, f.getMesh()}, f, grad_R, grad_Z, false);
+    return grad_R * grad_R + grad_Z * grad_Z;
+  }
+  // On structured FCI meshes f must have its parallel slices
+  const Vector3D g = Grad_perp(f);
+  return g * g;
+}
+
+Field3D NeutralMixed::perpGradientSquared(const Field3D& f, const Field3D& scale) const {
+  if (mesh->isUnstructured()) {
+    Field3D grad_R;
+    Field3D grad_Z;
+    (*dagp_op)(Field3D{1.0, f.getMesh()}, f, grad_R, grad_Z, false);
+    grad_R /= scale;
+    grad_Z /= scale;
+    return grad_R * grad_R + grad_Z * grad_Z;
+  }
+  const Vector3D g = Grad_perp(f) / scale;
+  return g * g;
+}
+
 void NeutralMixed::transform_impl(GuardedOptions& state) {
 
   mesh->communicate(Nn, Pn, NVn);
 
-  Nn.clearParallelSlices();
-  Pn.clearParallelSlices();
-  NVn.clearParallelSlices();
+  // On FCI meshes the parallel operators need the parallel slices: keep
+  // them through the arithmetic below, and the sheath conditions further
+  // down set their values at the targets
+  const bool fci = mesh->isFci();
+  const auto with_slices = [fci](const auto& f) -> Field3D {
+    return fci ? Field3D{Field3DParallel{f}} : Field3D{f};
+  };
+  if (not fci) {
+    Nn.clearParallelSlices();
+    Pn.clearParallelSlices();
+    NVn.clearParallelSlices();
+  }
 
-  Nn = floor(Nn, 0.0);
-  Pn = floor(Pn, 0.0);
+  Nn = with_slices(floor(Nn, 0.0));
+  Pn = with_slices(floor(Pn, 0.0));
 
   // Nnlim Used where division by neutral density is needed
-  Nnlim = softFloor(Nn, density_floor);
-  Tn = Pn / Nnlim;
+  Nnlim =
+      fci ? softFloor(Field3DParallel{Nn}, density_floor) : softFloor(Nn, density_floor);
+  Tn = with_slices(Pn / Nnlim);
   Tn.applyBoundary();
 
-  Vn = NVn / (AA * Nnlim);
+  Vn = with_slices(NVn / (AA * Nnlim));
   Vn.applyBoundary();
   NVn.applyBoundary();
 
@@ -453,58 +512,29 @@ void NeutralMixed::transform_impl(GuardedOptions& state) {
   // Parallel boundary conditions
   TRACE("Neutral boundary conditions");
 
-  if (sheath_ydown) {
-    for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
-      for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        // Free boundary (constant gradient) density
-        const BoutReal nnwall = std::max(
-            0.5 * (3. * Nn(r.ind, mesh->ystart, jz) - Nn(r.ind, mesh->ystart + 1, jz)),
-            0.0);
+  // On each point of the targets, current() is the cell next to the target,
+  // prev() the one before it and next() the boundary cell
+  sheath_boundary.iter([&](auto& pnt) {
+    // Free boundary (constant gradient) density
+    const BoutReal nnwall = std::max(0.5 * (3. * pnt.current(Nn) - pnt.prev(Nn)), 0.0);
 
-        const BoutReal tnwall = Tn(r.ind, mesh->ystart, jz);
+    const BoutReal tnwall = pnt.current(Tn);
 
-        Nn(r.ind, mesh->ystart - 1, jz) = 2 * nnwall - Nn(r.ind, mesh->ystart, jz);
+    pnt.next(Nn) = 2 * nnwall - pnt.current(Nn);
 
-        // Zero gradient temperature, heat flux added later
-        Tn(r.ind, mesh->ystart - 1, jz) = tnwall;
+    // Zero gradient temperature, heat flux added later
+    pnt.next(Tn) = tnwall;
 
-        // Set pressure consistent at the boundary
-        // Pn(r.ind, mesh->ystart - 1, jz) =
-        //     2. * nnwall * tnwall - Pn(r.ind, mesh->ystart, jz);
+    // Set pressure consistent at the boundary
+    // pnt.next(Pn) = 2. * nnwall * tnwall - pnt.current(Pn);
 
-        // Zero-gradient pressure
-        Pn(r.ind, mesh->ystart - 1, jz) = Pn(r.ind, mesh->ystart, jz);
+    // Zero-gradient pressure
+    pnt.next(Pn) = pnt.current(Pn);
 
-        // No flow into wall
-        Vn(r.ind, mesh->ystart - 1, jz) = -Vn(r.ind, mesh->ystart, jz);
-        NVn(r.ind, mesh->ystart - 1, jz) = -NVn(r.ind, mesh->ystart, jz);
-      }
-    }
-  }
-
-  if (sheath_yup) {
-    for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
-      for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        // Free boundary (constant gradient) density
-        const BoutReal nnwall = std::max(
-            0.5 * (3. * Nn(r.ind, mesh->yend, jz) - Nn(r.ind, mesh->yend - 1, jz)), 0.0);
-
-        const BoutReal tnwall = Tn(r.ind, mesh->yend, jz);
-
-        Nn(r.ind, mesh->yend + 1, jz) = 2 * nnwall - Nn(r.ind, mesh->yend, jz);
-
-        // Zero gradient temperature, heat flux added later
-        Tn(r.ind, mesh->yend + 1, jz) = tnwall;
-
-        // Zero-gradient pressure
-        Pn(r.ind, mesh->yend + 1, jz) = Pn(r.ind, mesh->yend, jz);
-
-        // No flow into wall
-        Vn(r.ind, mesh->yend + 1, jz) = -Vn(r.ind, mesh->yend, jz);
-        NVn(r.ind, mesh->yend + 1, jz) = -NVn(r.ind, mesh->yend, jz);
-      }
-    }
-  }
+    // No flow into wall
+    pnt.next(Vn) = -pnt.current(Vn);
+    pnt.next(NVn) = -pnt.current(NVn);
+  });
 
   // Set values in the state
   auto localstate = state["species"][name];
@@ -536,13 +566,18 @@ void NeutralMixed::finally(const Options& state) {
   // Field3D logNn = log(Nn);
   // Field3D logTn = log(Tn);
 
-  // Nnlim Used where division by neutral density is needed
-  Nnlim = softFloor(Nn, density_floor);
+  // Nnlim Used where division by neutral density is needed. On FCI meshes
+  // with the parallel slices of Nn (from the state, with the sheath values)
+  Nnlim = mesh->isFci() ? softFloor(Field3DParallel{Nn}, density_floor)
+                        : softFloor(Nn, density_floor);
   // Tnlim used where positivity of Tn is required
   const Field3D Tnlim = softFloor(Tn, temperature_floor);
-  // Pnlim used where positivity of Pn is required
-  Pnlim = softFloor(Pn, pressure_floor);
-  logPnlim = log(Pnlim);
+  // Pnlim used where positivity of Pn is required. On FCI meshes Pnlim and
+  // logPnlim keep the parallel slices, which Grad_perp needs on structured
+  // FCI meshes (limiters)
+  Pnlim = mesh->isFci() ? softFloor(Field3DParallel{Pn}, pressure_floor)
+                        : softFloor(Pn, pressure_floor);
+  logPnlim = mesh->isFci() ? Field3D{Field3DParallel{log(Pnlim)}} : Field3D{log(Pnlim)};
   logPnlim.applyBoundary();
   ///////////////////////////////////////////////////////
   // Calculate cross-field diffusion from collision frequency
@@ -665,9 +700,8 @@ void NeutralMixed::finally(const Options& state) {
   // Take smooth absolute of a gradient and regularise with:
   // Smooth user-set ceiling, which aids robustness in transients.
   // Smooth floor to avoid division by zero.
-  auto regularise_gradient = [&](const auto& g, BoutReal g_min,
+  auto regularise_gradient = [&](const Field3D& g_sq, BoutReal g_min,
                                  BoutReal g_max) -> Field3D {
-    const Field3D g_sq = g * g;
     const BoutReal g_max_sq = SQ(g_max);
     const Field3D g_ceil = g_sq * g_max_sq / (g_sq + g_max_sq);
     const Field3D g_reg = sqrt(g_ceil + SQ(g_min));
@@ -682,8 +716,9 @@ void NeutralMixed::finally(const Options& state) {
   // the Nn factor enters at the operator through DnnNn.
   if (flux_limit_adv >= 0.0) {
     if (update_limiter_gradient) {
-      grad_reg_adv = regularise_gradient(Grad_perp(logPnlim), limiter_gradient_floor,
-                                         limiter_gradient_ceiling);
+      grad_reg_adv =
+          regularise_gradient(perpGradientSquared(logPnlim), limiter_gradient_floor,
+                              limiter_gradient_ceiling);
     }
     Dmax = flux_limit_adv * (1. / 4) * vn_bar / grad_reg_adv;
   }
@@ -697,8 +732,9 @@ void NeutralMixed::finally(const Options& state) {
     // perpendicular
     if (flux_limit_cond_perp >= 0.0) {
       if (update_limiter_gradient) {
-        grad_reg_cond_perp = regularise_gradient(
-            Grad_perp(Tn) / Tnlim, limiter_gradient_floor, limiter_gradient_ceiling);
+        grad_reg_cond_perp =
+            regularise_gradient(perpGradientSquared(Tn, Tnlim), limiter_gradient_floor,
+                                limiter_gradient_ceiling);
       }
       kappa_n_max_perp =
           flux_limit_cond_perp * (1. / 2) * vn_bar * Nnlim / grad_reg_cond_perp;
@@ -709,8 +745,9 @@ void NeutralMixed::finally(const Options& state) {
     // parallel
     if (flux_limit_cond_par >= 0.0) {
       if (update_limiter_gradient) {
-        grad_reg_cond_par = regularise_gradient(
-            Grad_par(Tn) / Tnlim, limiter_gradient_floor_par, limiter_gradient_ceiling);
+        const Field3D g = Grad_par(Tn) / Tnlim;
+        grad_reg_cond_par = regularise_gradient(g * g, limiter_gradient_floor_par,
+                                                limiter_gradient_ceiling);
       }
       kappa_n_max_par =
           flux_limit_cond_par * (1. / 2) * vn_bar * Nnlim / grad_reg_cond_par;
@@ -728,8 +765,9 @@ void NeutralMixed::finally(const Options& state) {
     // perpendicular
     if (flux_limit_visc_perp >= 0.0) {
       if (update_limiter_gradient) {
-        grad_reg_visc_perp = regularise_gradient(
-            Grad_perp(Vn) / vn_bar, limiter_gradient_floor, limiter_gradient_ceiling);
+        grad_reg_visc_perp =
+            regularise_gradient(perpGradientSquared(Vn, vn_bar), limiter_gradient_floor,
+                                limiter_gradient_ceiling);
       }
       eta_n_max_perp = flux_limit_visc_perp * Pnlim / vn_bar / grad_reg_visc_perp;
     }
@@ -739,8 +777,9 @@ void NeutralMixed::finally(const Options& state) {
     // parallel
     if (flux_limit_visc_par >= 0.0) {
       if (update_limiter_gradient) {
-        grad_reg_visc_par = regularise_gradient(
-            Grad_par(Vn) / vn_bar, limiter_gradient_floor_par, limiter_gradient_ceiling);
+        const Field3D g = Grad_par(Vn) / vn_bar;
+        grad_reg_visc_par = regularise_gradient(g * g, limiter_gradient_floor_par,
+                                                limiter_gradient_ceiling);
       }
       eta_n_max_par = flux_limit_visc_par * Pnlim / vn_bar / grad_reg_visc_par;
     }
@@ -808,8 +847,12 @@ void NeutralMixed::finally(const Options& state) {
   kappa_n_perp.clearParallelSlices();
   kappa_n_perp.applyBoundary();
 
+  // The parallel coefficients keep their parallel slices on FCI meshes, for
+  // the parallel operators and their values at the targets
   mesh->communicate(kappa_n_par);
-  kappa_n_par.clearParallelSlices();
+  if (not mesh->isFci()) {
+    kappa_n_par.clearParallelSlices();
+  }
   kappa_n_par.applyBoundary();
 
   mesh->communicate(eta_n_unlimited);
@@ -821,7 +864,9 @@ void NeutralMixed::finally(const Options& state) {
   eta_n_perp.applyBoundary();
 
   mesh->communicate(eta_n_par);
-  eta_n_par.clearParallelSlices();
+  if (not mesh->isFci()) {
+    eta_n_par.clearParallelSlices();
+  }
   eta_n_par.applyBoundary();
 
   // Neutral diffusion parameters have the same boundary condition as Dnn
@@ -837,38 +882,35 @@ void NeutralMixed::finally(const Options& state) {
   // Override all diffusion coefficient BCs to be zero at targets if sheath is enabled.
   // Heat fluxes through the sheath are handled by the neutral_boundary component.
   auto zero_at_boundary = [&](Field3D& f) {
-    // ydown boundary
-    if (sheath_ydown) {
-      for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
-        for (int jz = 0; jz < mesh->LocalNz; jz++) {
-          f(r.ind, mesh->ystart - 1, jz) = -f(r.ind, mesh->ystart, jz);
-        }
-      }
-    }
-    // yup boundary
-    if (sheath_yup) {
-      for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
-        for (int jz = 0; jz < mesh->LocalNz; jz++) {
-          f(r.ind, mesh->yend + 1, jz) = -f(r.ind, mesh->yend, jz);
-        }
-      }
-    }
+    sheath_boundary.iter([&](auto& pnt) { pnt.next(f) = -pnt.current(f); });
   };
 
-  zero_at_boundary(Dnn);
-  zero_at_boundary(DnnNn);
-  zero_at_boundary(DnnPn);
-  zero_at_boundary(DnnNVn);
+  // On FCI meshes the perpendicular operators work within the poloidal
+  // planes and do not reach the targets: only the parallel coefficients
+  // need values there
+  const bool structured = not mesh->isFci();
+  if (structured) {
+    zero_at_boundary(Dnn);
+    zero_at_boundary(DnnNn);
+    zero_at_boundary(DnnPn);
+    zero_at_boundary(DnnNVn);
+  }
 
   if (zero_sheath_conductivity) {
-    zero_at_boundary(kappa_n_unlimited);
+    if (structured) {
+      zero_at_boundary(kappa_n_unlimited);
+    }
     zero_at_boundary(kappa_n_par);
-    zero_at_boundary(kappa_n_perp);
+    if (structured) {
+      zero_at_boundary(kappa_n_perp);
+    }
   }
 
   if (zero_sheath_viscosity) {
-    zero_at_boundary(eta_n_unlimited);
-    zero_at_boundary(eta_n_perp);
+    if (structured) {
+      zero_at_boundary(eta_n_unlimited);
+      zero_at_boundary(eta_n_perp);
+    }
     zero_at_boundary(eta_n_par);
   }
 
@@ -881,6 +923,9 @@ void NeutralMixed::finally(const Options& state) {
       sound_speed = sqrt(Tn * (5. / 3) / AA);
     }
   }
+  if (mesh->isFci()) {
+    mesh->communicate(sound_speed);
+  }
 
   /////////////////////////////////////////////////////
   // Neutral density
@@ -889,12 +934,7 @@ void NeutralMixed::finally(const Options& state) {
                                          pf_adv_par_ylow); // Parallel advection
 
   // Perpendicular diffusion
-  if (nonorthogonal_operators) {
-    ddt(Nn) +=
-        Div_a_Grad_perp_nonorthog(DnnNn, logPnlim, pf_adv_perp_xlow, pf_adv_perp_ylow);
-  } else {
-    ddt(Nn) += Div_a_Grad_perp_flows(DnnNn, logPnlim, pf_adv_perp_xlow, pf_adv_perp_ylow);
-  }
+  ddt(Nn) += perpDiffusion(DnnNn, logPnlim, pf_adv_perp_xlow, pf_adv_perp_ylow);
 
   Sn = density_source; // Save for possible output
   if (localstate.isSet("density_source")) {
@@ -912,15 +952,8 @@ void NeutralMixed::finally(const Options& state) {
             + (2. / 3) * Vn * Grad_par(Pn); // Work done
 
   // Perpendicular advection of pressure
-  if (nonorthogonal_operators) {
-    ddt(Pn) +=
-        (5. / 3)
-        * Div_a_Grad_perp_nonorthog(DnnPn, logPnlim, ef_adv_perp_xlow, ef_adv_perp_ylow);
-  } else {
-    ddt(Pn) +=
-        (5. / 3)
-        * Div_a_Grad_perp_flows(DnnPn, logPnlim, ef_adv_perp_xlow, ef_adv_perp_ylow);
-  }
+  ddt(Pn) +=
+      (5. / 3) * perpDiffusion(DnnPn, logPnlim, ef_adv_perp_xlow, ef_adv_perp_ylow);
 
   // The factor here is 5/2 as we're advecting internal energy and pressure.
   ef_adv_par_ylow *= 5. / 2;
@@ -935,15 +968,8 @@ void NeutralMixed::finally(const Options& state) {
                                         conduction_method);
 
     // Perpendicular conduction
-    if (nonorthogonal_operators) {
-      ddt(Pn) += (2. / 3)
-                 * Div_a_Grad_perp_nonorthog(kappa_n_perp, Tn, ef_cond_perp_xlow,
-                                             ef_cond_perp_ylow);
-    } else {
-      ddt(Pn) +=
-          (2. / 3)
-          * Div_a_Grad_perp_flows(kappa_n_perp, Tn, ef_cond_perp_xlow, ef_cond_perp_ylow);
-    }
+    ddt(Pn) +=
+        (2. / 3) * perpDiffusion(kappa_n_perp, Tn, ef_cond_perp_xlow, ef_cond_perp_ylow);
 
     // The factor here is likely 3/2 as this is pure energy flow, but needs checking.
     ef_cond_perp_xlow *= 3. / 2;
@@ -970,13 +996,7 @@ void NeutralMixed::finally(const Options& state) {
                - Grad_par(Pn); // Pressure gradient
 
     // Perpendicular advection of momentum
-    if (nonorthogonal_operators) {
-      ddt(NVn) +=
-          Div_a_Grad_perp_nonorthog(DnnNVn, logPnlim, mf_adv_perp_xlow, mf_adv_perp_ylow);
-    } else {
-      ddt(NVn) +=
-          Div_a_Grad_perp_flows(DnnNVn, logPnlim, mf_adv_perp_xlow, mf_adv_perp_ylow);
-    }
+    ddt(NVn) += perpDiffusion(DnnNVn, logPnlim, mf_adv_perp_xlow, mf_adv_perp_ylow);
 
     if (neutral_viscosity) {
       // NOTE: The following viscosity terms are not (yet) balanced
@@ -993,13 +1013,8 @@ void NeutralMixed::finally(const Options& state) {
           conduction_method);
 
       // Perpendicular viscosity
-      if (nonorthogonal_operators) {
-        viscosity_source += Div_a_Grad_perp_nonorthog(eta_n_perp, Vn, mf_visc_perp_xlow,
-                                                      mf_visc_perp_ylow);
-      } else {
-        viscosity_source +=
-            Div_a_Grad_perp_flows(eta_n_perp, Vn, mf_visc_perp_xlow, mf_visc_perp_ylow);
-      }
+      viscosity_source +=
+          perpDiffusion(eta_n_perp, Vn, mf_visc_perp_xlow, mf_visc_perp_ylow);
 
       ddt(NVn) += viscosity_source;
       ddt(Pn) += -(2. / 3) * Vn * viscosity_source;

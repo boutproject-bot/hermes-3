@@ -100,6 +100,12 @@ public:
   void createBoundaries() {
     addBoundary(bout::boundary::NewBoundaryRegionXIn("core", ystart, yend, this));
     addBoundary(bout::boundary::NewBoundaryRegionXOut("sol", ystart, yend, this));
+    createTargets();
+  }
+
+  // Use this if the FakeMesh needs the y-boundaries (targets) only, e.g. for
+  // loops over BOUT++'s y boundary iterator
+  void createTargets() {
     addBoundary(bout::boundary::NewBoundaryRegionYUp("upper_target", xstart, xend, this));
     addBoundary(
         bout::boundary::NewBoundaryRegionYDown("lower_target", xstart, xend, this));

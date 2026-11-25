@@ -52,10 +52,18 @@ tests/integrated/*-fci-unstructured*/data/
 !tests/integrated/reference-input-fci-unstructured/data/
 !tests/integrated/wall-hits-fci-unstructured/data/
 !tests/integrated/insulating-walls-fci-unstructured/data/
+!tests/integrated/neutral-diffusion-fci-unstructured/data/
+!tests/integrated/neutral-walls-fci-unstructured/data/
+!tests/integrated/recycling-fci-unstructured/data/
+!tests/integrated/reactions-fci-unstructured/data/
 
 # Generated at run time by tests/integrated/1D-golden-answer-fci{,-unstructured}/runtest
 tests/integrated/1D-golden-answer-fci/balance*/
 tests/integrated/1D-golden-answer-fci-unstructured/balance*/
+
+# Generated at run time by tests/integrated/neutral-mixed-fci/runtest
+tests/integrated/neutral-mixed-fci/neutral_mixed/
+tests/integrated/neutral-mixed-fci/with_neutral_boundary/
 
 # Generated at run time by tests/integrated/reference-input-fci-unstructured/runtest
 tests/integrated/reference-input-fci-unstructured/structured/
@@ -68,6 +76,26 @@ tests/integrated/wall-hits-fci-unstructured/unstructured/
 # Generated at run time by tests/integrated/insulating-walls-fci-unstructured/runtest
 tests/integrated/insulating-walls-fci-unstructured/insulating/
 tests/integrated/insulating-walls-fci-unstructured/dirichlet/
+
+# Generated at run time by tests/integrated/neutral-diffusion-fci-unstructured/runtest
+tests/integrated/neutral-diffusion-fci-unstructured/unlimited_*/
+tests/integrated/neutral-diffusion-fci-unstructured/limited_*/
+tests/integrated/neutral-diffusion-fci-unstructured/neutral_diffusion_*.fci.nc
+
+# Generated at run time by tests/integrated/neutral-walls-fci-unstructured/runtest
+tests/integrated/neutral-walls-fci-unstructured/neutral_mixed/
+tests/integrated/neutral-walls-fci-unstructured/with_neutral_boundary/
+tests/integrated/neutral-walls-fci-unstructured/neutral_walls.fci.nc
+
+# Generated at run time by tests/integrated/recycling-fci-unstructured/runtest
+tests/integrated/recycling-fci-unstructured/multiplier_*/
+tests/integrated/recycling-fci-unstructured/recycling.fci.nc
+
+# Generated at run time by tests/integrated/reactions-fci-unstructured/runtest
+tests/integrated/reactions-fci-unstructured/uniform/
+tests/integrated/reactions-fci-unstructured/straight/
+tests/integrated/reactions-fci-unstructured/tilted/
+tests/integrated/reactions-fci-unstructured/*.fci.nc
 
 # Generated at run time by tests/integrated/solver-statistics-fci-unstructured/runtest
 tests/integrated/solver-statistics-fci-unstructured/structured/

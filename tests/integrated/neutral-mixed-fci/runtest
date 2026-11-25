@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+
+# Neutral gas (neutral_mixed) on a structured FCI mesh (data/BOUT.inp): four
+# by four points in each of 128 poloidal planes, walls at both ends of the
+# (straight) field lines, and closed walls in R.
+#
+# On FCI meshes neutral_mixed uses the FCI perpendicular operator, as
+# anomalous_diffusion does, and the flux limiters take the perpendicular
+# gradient with BOUT++'s Grad_perp, which there needs the parallel slices.
+#
+# 1. The walls let no particles through, so the time derivative of the
+#    density must integrate to zero over the volume to round-off, without
+#    and with neutral_boundary (the second run also has separate limiters
+#    for conduction and viscosity, which take the gradients of Td and Vd).
+#    The gas must flow, and with neutral_boundary lose energy at the walls.
+# 2. ln(Pd) is linear in R at t = 0, so the gradient the limiter uses must
+#    equal its slope to round-off away from the walls in R. It is recovered
+#    from the outputs: 1/Dmax = 1/Dnn - 1/Dnn_unlimited, Dmax = 0.5 vbar / (4 g).
+
+import sys
+
+import numpy as np
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+from netCDF4 import Dataset
+
+TOLERANCE = 1e-12  # Particle balance, relative to the integral of |ddt(Nd)|
+GRADIENT_TOLERANCE = 1e-9  # Relative
+SLOPE = 2.0  # d ln(Nd) / dR [1/m], as in data/BOUT.inp
+AA = 2.0
+FLUX_LIMIT, FLOOR, CEILING = 0.5, 0.01, 100.0  # As in data/BOUT.inp
+
+
+def run(name, options=""):
+    shell(f"rm -rf {name}; mkdir {name}; cp data/BOUT.inp {name}/")
+    status, out = launch_safe(
+        f"../../../hermes-3 -d {name} {options}", nproc=1, pipe=True
+    )
+    with open(f"{name}/run.log", "w") as f:
+        f.write(out)
+    if status:
+        print(f"{name}: run failed\n{out}")
+        sys.exit(1)
+
+
+def get(name, var):
+    return np.asarray(collect(var, path=name, info=False, xguards=False, yguards=False))
+
+
+ok = True
+for name, options in (
+    ("neutral_mixed", ""),
+    (
+        "with_neutral_boundary",
+        "d:type=neutral_mixed,neutral_boundary d:combined_limiters=false",
+    ),
+):
+    run(name, options)
+    with Dataset(f"{name}/BOUT.dmp.0.nc") as d:
+        mxg, myg = int(d["MXG"][...]), int(d["MYG"][...])
+        volume = np.prod(
+            [
+                np.asarray(d[v][:])[mxg:-mxg, myg:-myg, :]
+                for v in ("J", "dx", "dy", "dz")
+            ],
+            axis=0,
+        )
+    ddt = get(name, "ddt(Nd)")
+    imbalance = max(abs(np.sum(f * volume)) / np.sum(abs(f) * volume) for f in ddt)
+    flow = np.max(np.abs(get(name, "NVd")[-1]))
+    line = (
+        f"{name}: particle imbalance of ddt(Nd) {imbalance:.1e}, "
+        f"largest momentum at the end {flow:.2e}"
+    )
+    ok = ok and imbalance < TOLERANCE and flow > 1e-6
+    if "neutral_boundary" in options:
+        cooling = np.min(get(name, "Ed_target_refl")[-1])
+        line += f", strongest target cooling {cooling:.2e}"
+        ok = ok and cooling < 0.0
+    print(line)
+
+# Gradient used by the limiter at t = 0, in the cells not next to the walls
+# in R (there the Neumann guard cells halve the central difference)
+name = "neutral_mixed"
+rho_s0 = float(collect("rho_s0", path=name, info=False))
+start = {var: get(name, var)[0, 1:-1] for var in ("Dnnd", "Dnnd_unlimited", "Pd", "Nd")}
+vbar = np.sqrt(8.0 * (start["Pd"] / start["Nd"]) / (np.pi * AA))
+d_max = 1.0 / (1.0 / start["Dnnd"] - 1.0 / start["Dnnd_unlimited"])
+g_limiter = FLUX_LIMIT * vbar / (4.0 * d_max)
+grad, gmin, gmax = SLOPE * rho_s0, FLOOR * rho_s0, CEILING * rho_s0
+expected = np.sqrt(grad**2 * gmax**2 / (grad**2 + gmax**2) + gmin**2)
+mismatch = np.max(np.abs(g_limiter / expected - 1.0))
+print(f"limiter gradient against the slope of ln P at t = 0: {mismatch:.1e}")
+ok = ok and mismatch < GRADIENT_TOLERANCE
+
+print(" => Test passed" if ok else " => Test failed")
+sys.exit(0 if ok else 1)

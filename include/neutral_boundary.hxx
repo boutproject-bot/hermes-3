@@ -4,6 +4,8 @@
 
 #include "component.hxx"
 
+#include <bout/yboundary_regions.hxx>
+
 /// Per-species boundary condition for neutral particles at
 /// sheath (Y) boundaries.
 ///
@@ -43,6 +45,8 @@ private:
   bool upper_y; ///< Boundary condition at upper y?
   bool sol;     ///< Boundary condition at sol?
   bool pfr;     ///< Boundary condition at pfr?
+
+  bout::boundary::YBoundary yboundary; ///< The lower and/or upper y boundaries
 
   ///
   /// state
