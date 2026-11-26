@@ -10,7 +10,8 @@
 # where the tubes cross the branch cut (twist-shift). Whole cells make the
 # shifted values exactly those of the structured mesh: the flux limiters
 # are not linear, and FFT interpolation of limited values would differ by
-# the interpolation error.
+# the interpolation error. dx differs between the tubes, as on a tokamak
+# grid.
 #
 # With fci_reconstruct the parallel advection on the map uses the fluxes of
 # the field-aligned operators. The two runs (the map on 1 and 2
@@ -43,14 +44,16 @@ DDT_DIFFERENT = 0.05
 def write_structured(path):
     x, y = np.meshgrid(np.arange(NX), np.arange(NY), indexing="ij")
     ones, zeros = np.ones(x.shape), np.zeros(x.shape)
-    values = {"zShift": DZ * (x + 1) * y, "dx": ones / NR, "dy": DL * ones}
+    r = (x - MXG + 0.5) / NR
+    # dx differs between the tubes, as on a tokamak grid
+    values = {"zShift": DZ * (x + 1) * y, "dx": (1 + 0.5 * r) / NR, "dy": DL * ones}
     values |= {"J": ones, "Bxy": ones}
     for g in ("g11", "g22", "g33", "g_11", "g_22", "g_33"):
         values[g] = ones
     for g in ("g12", "g13", "g23", "g_12", "g_13", "g_23"):
         values[g] = zeros
     values["s_cell"] = 2 * np.pi * (y + 0.5) / NY
-    values["r_cell"] = (x - MXG + 0.5) / NR
+    values["r_cell"] = r
     with Dataset(path, "w") as d:
         d.createDimension("x", NX)
         d.createDimension("y", NY)
