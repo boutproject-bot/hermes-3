@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+
+# Flux tubes that close on themselves (data/BOUT.inp) with a structured z
+# (nz = 8): on a structured field-aligned mesh with ShiftedMetric, and on
+# the same cells stored as a list along x (y of size 1, recast by
+# zoidberg.shiftedmap) with the shiftedmap parallel transform, whose
+# neighbours along the field come from a map and whose shift in z is
+# applied with FFTs. Four tubes of 16 cells; the shift from one cell to the
+# next is a whole number of z cells, different for each tube, with 3 more
+# where the tubes cross the branch cut (twist-shift). Whole cells make the
+# shifted values exactly those of the structured mesh: the flux limiters
+# are not linear, and FFT interpolation of limited values would differ by
+# the interpolation error.
+#
+# With fci_reconstruct the parallel advection on the map uses the fluxes of
+# the field-aligned operators. The two runs (the map on 1 and 2
+# processors) must then have the same time derivatives of the initial state
+# and the same state at the end. Without the option the time derivatives
+# must differ, which shows that the comparison can fail.
+
+import sys
+from pathlib import Path
+
+import numpy as np
+from boutdata.collect import collect
+from boututils.run_wrapper import launch_safe, shell
+from netCDF4 import Dataset
+from zoidberg import shiftedmap
+
+NR, NY, NZ, MXG = 4, 16, 8, 1
+NX = NR + 2 * MXG
+DZ = 2 * np.pi / NZ
+DL = 0.5  # Parallel length of a cell
+VARIABLES = ("Nh+", "NVh+", "Ph+", "Pe")
+# Measured: time derivatives 3e-15 to 7e-15, final state 5e-9 to 2e-8 (the
+# solver tolerance is 1e-10)
+DDT_TOL = 1e-10
+STATE_TOL = 1e-7
+# Measured without fci_reconstruct: 0.28 to 0.33
+DDT_DIFFERENT = 0.05
+
+
+def write_structured(path):
+    x, y = np.meshgrid(np.arange(NX), np.arange(NY), indexing="ij")
+    ones, zeros = np.ones(x.shape), np.zeros(x.shape)
+    values = {"zShift": DZ * (x + 1) * y, "dx": ones / NR, "dy": DL * ones}
+    values |= {"J": ones, "Bxy": ones}
+    for g in ("g11", "g22", "g33", "g_11", "g_22", "g_33"):
+        values[g] = ones
+    for g in ("g12", "g13", "g23", "g_12", "g_13", "g_23"):
+        values[g] = zeros
+    values["s_cell"] = 2 * np.pi * (y + 0.5) / NY
+    values["r_cell"] = (x - MXG + 0.5) / NR
+    with Dataset(path, "w") as d:
+        d.createDimension("x", NX)
+        d.createDimension("y", NY)
+        d.setncattr("parallel_transform", "shiftedmetric")
+        integers = {"nx": NX, "ny": NY, "nz": NZ, "ixseps1": NX, "ixseps2": NX}
+        for name, value in integers.items():
+            d.createVariable(name, "i4")[...] = value
+        shift_angle = DZ * ((np.arange(NX) + 1) * NY + 3)
+        d.createVariable("ShiftAngle", "f8", ("x",))[...] = shift_angle
+        for name, value in values.items():
+            d.createVariable(name, "f8", ("x", "y"))[...] = value
+
+
+def run(name, options, nproc=1):
+    path = Path(name)
+    path.mkdir(exist_ok=True)
+    path.joinpath("BOUT.inp").write_text(Path("data/BOUT.inp").read_text())
+    shell(f"rm -f {name}/BOUT.dmp.*.nc")
+    status, out = launch_safe(
+        f"../../../hermes-3 -d {name} {options}", nproc=nproc, pipe=True
+    )
+    path.joinpath("run.log").write_text(out)
+    if status:
+        print(f"{name}: run failed\n{out}")
+        sys.exit(1)
+
+
+def get(name, var, cells=None):
+    """Time history of `var` as (t, x, y, z) of the structured mesh"""
+    f = np.asarray(collect(var, path=name, info=False, xguards=False, yguards=False))
+    if cells is None:
+        return f
+    xs, ys = cells
+    result = np.full((f.shape[0], NR, NY, NZ), np.nan)
+    result[:, xs - MXG, ys, :] = f[:, :, 0, :]
+    assert np.all(np.isfinite(result))
+    return result
+
+
+def difference(a, b):
+    return np.max(abs(a - b)) / np.max(abs(a))
+
+
+write_structured("structured.nc")
+cells = shiftedmap.recast("structured.nc", "mapped.nc", mxg=MXG, seed=3)
+
+run(
+    "structured",
+    f"MXG={MXG} MYG=2 mesh:file=structured.nc mesh:paralleltransform:type=shifted",
+)
+mapped = "MXG=0 MYG=1 mesh:file=mapped.nc mesh:paralleltransform:type=shiftedmap"
+reconstruct = " h+:fci_reconstruct=true e:fci_reconstruct=true"
+run("mapped", mapped + reconstruct)
+run("mapped_np2", mapped + reconstruct + " NXPE=2", nproc=2)
+run("mapped_first_order", mapped)
+
+ok = True
+for var in VARIABLES:
+    s = get("structured", var)
+    s_ddt = get("structured", f"ddt({var})")[0]
+    first_order = difference(s_ddt, get("mapped_first_order", f"ddt({var})", cells)[0])
+    for name in ("mapped", "mapped_np2"):
+        m = get(name, var, cells)
+        start, end = difference(s[0], m[0]), difference(s[-1], m[-1])
+        ddt = difference(s_ddt, get(name, f"ddt({var})", cells)[0])
+        print(
+            f"{var}, {name}: relative difference of the initial state {start:.1e}, "
+            f"of its time derivative {ddt:.1e} (without fci_reconstruct "
+            f"{first_order:.2f}), of the final state {end:.1e}"
+        )
+        ok = ok and start < 1e-13 and ddt < DDT_TOL and end < STATE_TOL
+    ok = ok and first_order > DDT_DIFFERENT
+
+if ok:
+    print(" => Test passed")
+    sys.exit(0)
+print(" => Test failed")
+sys.exit(1)

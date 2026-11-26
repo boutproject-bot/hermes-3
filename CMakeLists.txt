@@ -343,6 +343,20 @@ if(HERMES_TESTS)
         STATUS
           "zoidberg.unstructured not found: skipping unstructured FCI tests")
     endif()
+    # Grids for the shiftedmap parallel transform are recast by
+    # zoidberg.shiftedmap
+    execute_process(
+      COMMAND
+        ${PYTHON_EXECUTABLE} -c
+        "import importlib.util as u; exit(u.find_spec('zoidberg.shiftedmap') is None)"
+      RESULT_VARIABLE zoidberg_shiftedmap_missing
+      OUTPUT_QUIET ERROR_QUIET)
+    if(zoidberg_shiftedmap_missing EQUAL 0)
+      set(zoidberg_shiftedmap_FOUND ON)
+    else()
+      set(zoidberg_shiftedmap_FOUND OFF)
+      message(STATUS "zoidberg.shiftedmap not found: skipping shiftedmap tests")
+    endif()
     file(CREATE_LINK ${CMAKE_CURRENT_SOURCE_DIR}/grids
          ${CMAKE_CURRENT_BINARY_DIR}/grids SYMBOLIC)
   endif()
@@ -557,6 +571,10 @@ if(HERMES_TESTS)
   hermes_add_integrated_test(
     field-aligned-fci-unstructured REQUIRES BOUT_USE_METRIC_3D BOUT_HAS_PETSC
     zoidberg_unstructured_FOUND)
+  # The same with a structured z (nz > 1): the cells as a list with the
+  # shiftedmap parallel transform, against ShiftedMetric on the structured mesh
+  hermes_add_integrated_test(field-aligned-shiftedmap REQUIRES
+                             BOUT_USE_METRIC_3D zoidberg_shiftedmap_FOUND)
   # Insulating walls: perpendicular transport keeps particles and energy
   hermes_add_integrated_test(
     insulating-walls-fci-unstructured REQUIRES BOUT_USE_METRIC_3D

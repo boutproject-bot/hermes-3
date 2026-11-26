@@ -79,6 +79,13 @@ tests/integrated/field-aligned-fci-unstructured/structured/
 tests/integrated/field-aligned-fci-unstructured/unstructured/
 tests/integrated/field-aligned-fci-unstructured/unstructured_first_order/
 
+# Generated at run time by tests/integrated/field-aligned-shiftedmap/runtest
+tests/integrated/field-aligned-shiftedmap/*.nc
+tests/integrated/field-aligned-shiftedmap/structured/
+tests/integrated/field-aligned-shiftedmap/mapped/
+tests/integrated/field-aligned-shiftedmap/mapped_np2/
+tests/integrated/field-aligned-shiftedmap/mapped_first_order/
+
 # Generated at run time by tests/integrated/insulating-walls-fci-unstructured/runtest
 tests/integrated/insulating-walls-fci-unstructured/insulating/
 tests/integrated/insulating-walls-fci-unstructured/dirichlet/
