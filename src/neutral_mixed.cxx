@@ -483,13 +483,19 @@ void NeutralMixed::transform_impl(GuardedOptions& state) {
   mesh->communicate(Nn, Pn, NVn);
 
   // On FCI meshes the parallel operators need the parallel slices: keep
-  // them through the arithmetic below, and the sheath conditions further
-  // down set their values at the targets
+  // them through the arithmetic below. Where the field lines leave the
+  // domain the interpolation leaves them unset: the fields' parallel
+  // boundary conditions set them there, and the sheath conditions further
+  // down overwrite them at the targets
   const bool fci = mesh->isFci();
   const auto with_slices = [fci](const auto& f) -> Field3D {
     return fci ? Field3D{Field3DParallel{f}} : Field3D{f};
   };
-  if (not fci) {
+  if (fci) {
+    Nn.applyParallelBoundary();
+    Pn.applyParallelBoundary();
+    NVn.applyParallelBoundary();
+  } else {
     Nn.clearParallelSlices();
     Pn.clearParallelSlices();
     NVn.clearParallelSlices();

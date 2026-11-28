@@ -13,6 +13,10 @@
 #    and with neutral_boundary (the second run also has separate limiters
 #    for conduction and viscosity, which take the gradients of Td and Vd).
 #    The gas must flow, and with neutral_boundary lose energy at the walls.
+#    A third run switches the sheath conditions off: then the fields' own
+#    parallel boundary conditions set the values at the walls (on FCI meshes
+#    the interpolation leaves them unset), here zero gradient for Nd and Pd
+#    and zero momentum at the wall, which again let no particles through.
 # 2. ln(Pd) is linear in R at t = 0, so the gradient the limiter uses must
 #    equal its slope to round-off away from the walls in R. It is recovered
 #    from the outputs: 1/Dmax = 1/Dnn - 1/Dnn_unlimited, Dmax = 0.5 vbar / (4 g).
@@ -53,6 +57,12 @@ for name, options in (
     (
         "with_neutral_boundary",
         "d:type=neutral_mixed,neutral_boundary d:combined_limiters=false",
+    ),
+    (
+        "no_sheath",
+        "d:sheath_ydown=false d:sheath_yup=false"
+        " Nd:bndry_par_all=parallel_neumann_o1 Pd:bndry_par_all=parallel_neumann_o1"
+        " NVd:bndry_par_all=parallel_dirichlet_o2",
     ),
 ):
     run(name, options)
