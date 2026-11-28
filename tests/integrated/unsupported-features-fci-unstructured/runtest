@@ -34,6 +34,12 @@ CASES = [
         True,
         GUARD,
     ),
+    (
+        "neutral_mixed freeze_low_density",
+        "hermes:components=h+,d d:type=neutral_mixed d:AA=2 d:freeze_low_density=true",
+        True,
+        GUARD,
+    ),
     ("classical_diffusion", "hermes:components=h+,classical_diffusion", True, GUARD),
     ("vorticity", "hermes:components=h+,vorticity", True, GUARD),
     ("relax_potential", "hermes:components=h+,relax_potential", True, GUARD),

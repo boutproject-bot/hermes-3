@@ -98,12 +98,18 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                      .doc("Enable preconditioning in neutral model?")
                      .withDefault<bool>(false);
 
+  freeze_low_density = options["freeze_low_density"]
+                           .doc("Freeze evolution in low density regions?")
+                           .withDefault<bool>(false);
+
   // FCI meshes: the perpendicular terms use the FCI operator, as in
   // anomalous_diffusion (on unstructured meshes the grid file's operator).
   // The nonorthogonal operators and the preconditioner work in structured
-  // index space.
+  // index space, and freeze_low_density averages over index neighbours,
+  // which on unstructured meshes are not neighbouring cells.
   requireStructuredMesh("neutral_mixed:nonorthogonal_operators", nonorthogonal_operators);
   requireStructuredMesh("neutral_mixed:precondition", precondition);
+  requireStructuredMesh("neutral_mixed:freeze_low_density", freeze_low_density);
   sheath_boundary = bout::boundary::YBoundary(*mesh, sheath_ydown, sheath_yup);
   if (mesh->isFci()) {
     dagp_op = FV::Div_a_Grad_perp_FCI::create(mesh, meters);
@@ -144,10 +150,6 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                       .doc("A minimum density used when dividing NVn by Nn. "
                            "Normalised units.")
                       .withDefault(1e-8);
-
-  freeze_low_density = options["freeze_low_density"]
-                           .doc("Freeze evolution in low density regions?")
-                           .withDefault<bool>(false);
 
   temperature_floor = options["temperature_floor"]
                           .doc("Low temperature scale for low_T_diffuse_perp")
